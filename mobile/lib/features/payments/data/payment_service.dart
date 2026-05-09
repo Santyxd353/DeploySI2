@@ -7,7 +7,8 @@ import '../../../core/config/app_config.dart';
 import '../../../core/network/api_client.dart';
 
 class PaymentService {
-  PaymentService({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient();
+  PaymentService({ApiClient? apiClient})
+    : _apiClient = apiClient ?? ApiClient();
 
   final ApiClient _apiClient;
 
@@ -64,7 +65,8 @@ class PaymentService {
       headers: _buildHeaders(accessToken: accessToken),
       body: {
         'payment_intent_id': paymentIntentId,
-        if (carritoToken != null && carritoToken.trim().isNotEmpty) 'carrito_token': carritoToken.trim(),
+        if (carritoToken != null && carritoToken.trim().isNotEmpty)
+          'carrito_token': carritoToken.trim(),
         'datos_factura': datosFactura,
       },
     );
@@ -72,14 +74,19 @@ class PaymentService {
     final data = _apiClient.parseJsonMap(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw PaymentServiceException(
-        _extractDetail(data, fallback: 'No se pudo confirmar el pago con el backend.'),
+        _extractDetail(
+          data,
+          fallback: 'No se pudo confirmar el pago con el backend.',
+        ),
       );
     }
 
     return data;
   }
 
-  Future<List<Map<String, dynamic>>> listarMisPagos({required String accessToken}) async {
+  Future<List<Map<String, dynamic>>> listarMisPagos({
+    required String accessToken,
+  }) async {
     final response = await _apiClient.get(
       '/api/ventas/mis-facturas/',
       headers: _buildHeaders(accessToken: accessToken),
@@ -91,9 +98,14 @@ class PaymentService {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final data = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
       throw PaymentServiceException(
-        _extractDetail(data, fallback: 'No se pudo cargar el historial de pagos.'),
+        _extractDetail(
+          data,
+          fallback: 'No se pudo cargar el historial de pagos.',
+        ),
       );
     }
 
@@ -110,6 +122,28 @@ class PaymentService {
     }
 
     return <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> obtenerDetalleFactura({
+    required String numeroFactura,
+    required String accessToken,
+  }) async {
+    final response = await _apiClient.get(
+      '/api/ventas/factura/$numeroFactura/',
+      headers: _buildHeaders(accessToken: accessToken),
+    );
+
+    final data = _apiClient.parseJsonMap(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw PaymentServiceException(
+        _extractDetail(
+          data,
+          fallback: 'No se pudo cargar el detalle de la factura.',
+        ),
+      );
+    }
+
+    return data;
   }
 
   Map<String, String> _buildHeaders({String? accessToken}) {

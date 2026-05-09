@@ -48,6 +48,16 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function formatFecha(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("es-BO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 function extractErrorMessage(err) {
   if (!err) return "No se pudo completar el pago.";
   if (typeof err === "string") return err;
@@ -276,7 +286,6 @@ function PaymentForm({ total, onSuccess, onError, onCartCleared, onCartSynced })
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { user } = useAuth();
 
   const [items, setItems] = useState([]);
   const [subtotal, setSubtotal] = useState(0);
@@ -285,6 +294,10 @@ export default function CheckoutPage() {
   const [paymentSuccess, setPaymentSuccess] = useState(null);
   const [paymentError, setPaymentError] = useState(null);
   const [metodoEntrega, setMetodoEntrega] = useState("domicilio");
+  const [showFacturaDetalle, setShowFacturaDetalle] = useState(false);
+  const [facturaDetalle, setFacturaDetalle] = useState(null);
+  const [facturaLoading, setFacturaLoading] = useState(false);
+  const [facturaError, setFacturaError] = useState(null);
 
   const hydrateCartFromBackend = (data) => {
     const backendItems = Array.isArray(data?.items) ? data.items : [];
@@ -363,6 +376,9 @@ export default function CheckoutPage() {
     // Marcar que se realizó un pago exitoso
     sessionStorage.setItem('just_paid', 'true');
     setPaymentSuccess(data);
+    setShowFacturaDetalle(false);
+    setFacturaDetalle(null);
+    setFacturaError(null);
   };
 
   const handlePaymentError = (error) => {
@@ -375,6 +391,27 @@ export default function CheckoutPage() {
     setItems([]);
     setSubtotal(0);
     setTotal(0);
+  };
+
+  const handleVerFactura = async () => {
+    const numeroFactura = paymentSuccess?.factura?.numero;
+    if (!numeroFactura) {
+      setFacturaError("No se encontró el número de factura para esta compra.");
+      return;
+    }
+
+    setShowFacturaDetalle(true);
+    setFacturaLoading(true);
+    setFacturaError(null);
+
+    try {
+      const data = await pagosService.obtenerFactura(numeroFactura);
+      setFacturaDetalle(data);
+    } catch (error) {
+      setFacturaError(extractErrorMessage(error));
+    } finally {
+      setFacturaLoading(false);
+    }
   };
 
   if (loading) {
@@ -416,12 +453,94 @@ export default function CheckoutPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => window.print()}
+                onClick={handleVerFactura}
                 className="border-slate-300"
               >
-                Imprimir factura
+                Ver factura
               </Button>
             </div>
+
+            {facturaError && (
+              <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-3 text-left">
+                <p className="text-sm text-red-600">{facturaError}</p>
+              </div>
+            )}
+
+            {showFacturaDetalle && (
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-xl font-black text-slate-900">Detalle de factura</h3>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="border-slate-300"
+                      onClick={() => window.print()}
+                      disabled={facturaLoading || !facturaDetalle}
+                    >
+                      Imprimir
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-slate-300"
+                      onClick={() => setShowFacturaDetalle(false)}
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                </div>
+
+                {facturaLoading && (
+                  <p className="text-sm font-semibold text-slate-600">Cargando factura...</p>
+                )}
+
+                {!facturaLoading && facturaDetalle && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-xl bg-white p-4 border border-slate-200">
+                        <p className="text-xs font-semibold text-slate-500">Factura</p>
+                        <p className="text-lg font-black text-slate-900">{facturaDetalle.numero_factura}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">Fecha de emisión</p>
+                        <p className="text-sm font-bold text-slate-800">{formatFecha(facturaDetalle.fecha_emision)}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">Tipo</p>
+                        <p className="text-sm font-bold text-slate-800">{facturaDetalle.tipo || "simple"}</p>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-4 border border-slate-200">
+                        <p className="text-xs font-semibold text-slate-500">Cliente</p>
+                        <p className="text-sm font-bold text-slate-800">{facturaDetalle.nombre_cliente || "-"}</p>
+                        <p className="text-sm text-slate-700">{facturaDetalle.email_cliente || "-"}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">NIT/CI</p>
+                        <p className="text-sm font-bold text-slate-800">{facturaDetalle.nit_ci || "No registrado"}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="mb-3 text-sm font-black text-slate-900">Items comprados</p>
+                      <div className="space-y-2">
+                        {(facturaDetalle.items || []).map((item, idx) => (
+                          <div key={`${item.producto}-${idx}`} className="flex items-start justify-between rounded-lg bg-slate-50 p-2">
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{item.producto}</p>
+                              <p className="text-xs text-slate-500">
+                                {item.cantidad} x {formatPrecio(item.precio_unitario)}
+                              </p>
+                            </div>
+                            <p className="text-sm font-black text-slate-900">{formatPrecio(item.subtotal)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-slate-600">Total cobrado</span>
+                        <span className="text-lg font-black text-teal-700">
+                          {formatPrecio(facturaDetalle?.venta?.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </main>

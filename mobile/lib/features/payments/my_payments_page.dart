@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/auth/auth_session_manager.dart';
 import 'data/payment_service.dart';
+import 'payment_invoice_detail_page.dart';
 
 class MyPaymentsPage extends StatefulWidget {
   const MyPaymentsPage({super.key});
@@ -17,6 +18,15 @@ class _MyPaymentsPageState extends State<MyPaymentsPage> {
   bool _loading = true;
   String _error = '';
   List<Map<String, dynamic>> _facturas = <Map<String, dynamic>>[];
+
+  String _formatFecha(String raw) {
+    if (raw.trim().isEmpty) return '-';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    final local = parsed.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
+  }
 
   @override
   void initState() {
@@ -136,7 +146,7 @@ class _MyPaymentsPageState extends State<MyPaymentsPage> {
         final factura = _facturas[index];
         final numero = factura['numero_factura']?.toString() ?? 'SIN-NUMERO';
         final total = factura['total']?.toString() ?? '0.00';
-        final fecha = factura['fecha_emision']?.toString() ?? '';
+        final fecha = _formatFecha(factura['fecha_emision']?.toString() ?? '');
         final estado = factura['estado']?.toString() ?? 'pagada';
 
         return Container(
@@ -187,6 +197,24 @@ class _MyPaymentsPageState extends State<MyPaymentsPage> {
               Text(
                 fecha,
                 style: GoogleFonts.manrope(color: const Color(0xFF6F7977), fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PaymentInvoiceDetailPage(numeroFactura: numero),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                  label: Text(
+                    'Ver detalles',
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  ),
+                ),
               ),
             ],
           ),
