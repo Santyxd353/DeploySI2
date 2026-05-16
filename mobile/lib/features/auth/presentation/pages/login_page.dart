@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/auth/auth_session_manager.dart';
+import '../../../../core/config/tenant_config.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/presentation/pages/customer_home_page.dart';
 import 'forgot_password_page.dart';
@@ -66,6 +67,7 @@ class _LoginPanel extends StatefulWidget {
 }
 
 class _LoginPanelState extends State<_LoginPanel> {
+  final _subdomainController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
@@ -76,22 +78,35 @@ class _LoginPanelState extends State<_LoginPanel> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    // Pre-fill with the currently configured subdomain (dart-define or saved).
+    _subdomainController.text = TenantConfig.subdomain;
+  }
+
+  @override
   void dispose() {
+    _subdomainController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    final subdomain = _subdomainController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
+    if (subdomain.isEmpty || email.isEmpty || password.isEmpty) {
       setState(
-        () => _errorMessage = 'Completa correo y contrasena para continuar.',
+        () => _errorMessage =
+            'Completa el subdominio, correo y contrasena para continuar.',
       );
       return;
     }
+
+    // Persist the subdomain so every API call sends X-Tenant-Subdomain.
+    await TenantConfig.save(subdomain);
 
     setState(() {
       _isSubmitting = true;
@@ -186,6 +201,24 @@ class _LoginPanelState extends State<_LoginPanel> {
               ),
             ),
             const SizedBox(height: 28),
+            const Text(
+              'Farmacia (subdominio)',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF3E4946),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _subdomainController,
+              keyboardType: TextInputType.text,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                hintText: 'ej: farmacia1',
+                prefixIcon: Icon(Icons.storefront_outlined),
+              ),
+            ),
+            const SizedBox(height: 18),
             const Text(
               'Correo electronico',
               style: TextStyle(

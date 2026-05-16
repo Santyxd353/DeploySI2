@@ -82,7 +82,9 @@ def global_login(request):
 
     membership = memberships.order_by("-joined_at").first()
 
-    if membership is None and user.is_superuser:
+    # Si el superadmin entra desde el login global sin subdominio,
+    # debe quedarse en el panel global aunque tenga membresias tenant.
+    if user.is_superuser and not subdominio:
         from rest_framework_simplejwt.tokens import RefreshToken
 
         refresh = RefreshToken.for_user(user)

@@ -1,4 +1,10 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+function normalizeApiBaseUrl(rawValue) {
+  const base = (rawValue || "http://localhost:8000").trim().replace(/\/+$/, "");
+  // If env already includes /api, avoid generating /api/api/... when endpoints also start with /api.
+  return base.replace(/\/api$/i, "");
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const ROOT_DOMAIN = import.meta.env.VITE_ROOT_DOMAIN || "localhost";
 const ACCESS_TOKEN_KEY = "auth_access_token";
 const REFRESH_TOKEN_KEY = "auth_refresh_token";

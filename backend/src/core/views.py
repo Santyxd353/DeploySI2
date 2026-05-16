@@ -8,6 +8,7 @@ from django.core.mail import send_mail
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.dateparse import parse_datetime
+from urllib.parse import urlparse, urlunparse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
@@ -56,6 +57,21 @@ from .security import (
 from .authentication import get_tenant_cookie_name
 from tenants.models import TenantUser
 from clientes.models import Cliente
+
+
+def _build_frontend_auth_url(path, request=None):
+    base_url = settings.SAAS_PUBLIC_BASE_URL
+    parsed = urlparse(base_url)
+    tenant = getattr(request, "tenant", None) if request is not None else None
+
+    if tenant is not None and getattr(tenant, "schema_name", "public") != "public":
+        root_domain = settings.SAAS_ROOT_DOMAIN or parsed.hostname or "localhost"
+        scheme = parsed.scheme or "http"
+        port = f":{parsed.port}" if parsed.port else ""
+        netloc = f"{tenant.subdomain}.{root_domain}{port}"
+        return urlunparse((scheme, netloc, path, "", "", ""))
+
+    return urlunparse((parsed.scheme or "http", parsed.netloc, path, "", "", ""))
 
 
 class AdminUsersPagination(PageNumberPagination):
@@ -201,7 +217,7 @@ def register(request):
 
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
-    verify_url = f"{settings.FRONTEND_VERIFY_EMAIL_URL}?uid={uid}&token={token}"
+    verify_url = f"{_build_frontend_auth_url('/verify-email', request=request)}?uid={uid}&token={token}"
 
     send_mail(
         subject="Verifica tu correo - Farmacia SaludPlus",
@@ -718,7 +734,7 @@ def password_reset_request(request):
     if user:
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        reset_url = f"{settings.FRONTEND_RESET_PASSWORD_URL}?uid={uid}&token={token}"
+        reset_url = f"{_build_frontend_auth_url('/reset-password', request=request)}?uid={uid}&token={token}"
 
         send_mail(
             subject="Recuperacion de contrasena - Farmacia SaludPlus",

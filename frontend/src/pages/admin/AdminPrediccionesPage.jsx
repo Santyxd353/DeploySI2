@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -26,6 +26,7 @@ import {
   LoaderIcon,
   AlertTriangleIcon,
 } from '../../components/ui/Icons';
+import { requestJsonWithAuthRetry } from '../../services/apiClient';
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
@@ -68,15 +69,7 @@ function PrediccionResultados({ prediccion }) {
 
   return (
     <div className="space-y-4 mt-4">
-      {/* Aviso modelo simulado */}
-      {prediccion.aviso && (
-        <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-          <AlertTriangleIcon className="h-4 w-4 flex-shrink-0" />
-          {prediccion.aviso}
-        </div>
-      )}
-
-      {/* KPI cards */}
+        {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard
           label="Total estimado"
@@ -160,8 +153,101 @@ function PrediccionResultados({ prediccion }) {
   );
 }
 
+// ─── Buscador de producto con autocompletado ─────────────────────────────────
+function ProductoBuscador({ onSelect }) {
+  const [query, setQuery] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [abierto, setAbierto] = useState(false);
+  const timerRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setAbierto(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const buscar = useCallback(async (texto) => {
+    if (texto.trim().length < 2) { setResultados([]); return; }
+    setBuscando(true);
+    try {
+      const data = await requestJsonWithAuthRetry(
+        `/api/inventarios/productos/?search=${encodeURIComponent(texto)}&page_size=10`
+      );
+      const lista = Array.isArray(data) ? data : (data.results ?? []);
+      setResultados(lista);
+      setAbierto(lista.length > 0);
+    } catch {
+      setResultados([]);
+    } finally {
+      setBuscando(false);
+    }
+  }, []);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setSeleccionado(null);
+    onSelect(null);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => buscar(val), 300);
+  };
+
+  const handleSelect = (producto) => {
+    setSeleccionado(producto);
+    setQuery(`${producto.nombre_comercial} — SKU: ${producto.sku}`);
+    setAbierto(false);
+    onSelect(producto.id);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 relative min-w-[280px]" ref={wrapperRef}>
+      <label className="text-sm font-medium text-gray-700">Buscar producto</label>
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={handleChange}
+          onFocus={() => resultados.length > 0 && setAbierto(true)}
+          placeholder="Nombre o SKU del producto…"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          autoComplete="off"
+        />
+        {buscando && (
+          <LoaderIcon className="animate-spin h-4 w-4 text-gray-400 absolute right-2 top-2.5" />
+        )}
+      </div>
+      {abierto && resultados.length > 0 && (
+        <ul className="absolute top-full mt-1 z-50 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+          {resultados.map((p) => (
+            <li
+              key={p.id}
+              onMouseDown={() => handleSelect(p)}
+              className="px-3 py-2 text-sm cursor-pointer hover:bg-indigo-50 flex justify-between items-center gap-4"
+            >
+              <span className="font-medium text-gray-800 truncate">{p.nombre_comercial}</span>
+              <span className="text-xs text-gray-400 shrink-0">SKU: {p.sku}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {seleccionado && (
+        <p className="text-xs text-indigo-600 font-medium mt-0.5">ID seleccionado: {seleccionado.id}</p>
+      )}
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AdminPrediccionesPage() {
-  const [productoId, setProductoId] = useState('');
+  const [productoId, setProductoId] = useState(null);
   const [dias, setDias] = useState(7);
   const { prediccion, loading: loadingPred, error: errorPred, fetchPrediccion } = usePrediccionDemanda();
   const { recomendaciones, loading: loadingRec, loadRecomendaciones } = useRecomendaciones();
@@ -177,7 +263,7 @@ export default function AdminPrediccionesPage() {
   const handlePredecir = (e) => {
     e.preventDefault();
     if (productoId) {
-      fetchPrediccion(parseInt(productoId), dias);
+      fetchPrediccion(productoId, dias);
     }
   };
 
@@ -205,18 +291,7 @@ export default function AdminPrediccionesPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handlePredecir} className="flex flex-wrap gap-4 items-end">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-700">ID del Producto</label>
-                <input
-                  type="number"
-                  value={productoId}
-                  onChange={(e) => setProductoId(e.target.value)}
-                  placeholder="Ej: 12"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-36"
-                  required
-                  min="1"
-                />
-              </div>
+              <ProductoBuscador onSelect={setProductoId} />
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-gray-700">Días a predecir</label>
                 <input
@@ -230,8 +305,8 @@ export default function AdminPrediccionesPage() {
               </div>
               <Button
                 type="submit"
-                disabled={loadingPred}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={loadingPred || !productoId}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loadingPred ? (
                   <>

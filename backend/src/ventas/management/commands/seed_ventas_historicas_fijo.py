@@ -8,6 +8,7 @@ from ventas.models import Venta, DetalleVenta
 from inventarios.models import Producto, Inventario
 from clientes.models import Cliente
 from tenants.models import Tenant
+from tenants.context import clear_current_tenant, set_current_tenant
 
 User = get_user_model()
 
@@ -156,5 +157,9 @@ class Command(BaseCommand):
         tenants = self._resolve_tenants(options.get("schema"), options.get("all_tenants", False))
         for tenant in tenants:
             with schema_context(tenant.schema_name):
+                set_current_tenant(tenant)
                 self.stdout.write(f"[{tenant.schema_name}] Ejecutando seed de ventas historicas...")
-                self._seed_for_current_schema()
+                try:
+                    self._seed_for_current_schema()
+                finally:
+                    clear_current_tenant()

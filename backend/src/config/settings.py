@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -161,8 +162,20 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    pattern.strip()
+    for pattern in os.getenv("CORS_ALLOWED_ORIGIN_REGEXES", "").split(",")
+    if pattern.strip()
+]
+
 if SAAS_PUBLIC_BASE_URL and SAAS_PUBLIC_BASE_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(SAAS_PUBLIC_BASE_URL)
+
+if SAAS_ROOT_DOMAIN:
+    escaped_root = re.escape(SAAS_ROOT_DOMAIN)
+    wildcard_pattern = rf"^https?://([a-zA-Z0-9-]+\.)*{escaped_root}$"
+    if wildcard_pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
+        CORS_ALLOWED_ORIGIN_REGEXES.append(wildcard_pattern)
 
 # Permitir credenciales
 CORS_ALLOW_CREDENTIALS = True
@@ -195,12 +208,22 @@ CORS_ALLOW_METHODS = [
 # En modo DEBUG, permitir todos los orígenes (útil para desarrollo)
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
+    if '*' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('*')
 
 # Orígenes confiables para CSRF (necesario si se usan cookies de sesión)
 CSRF_TRUSTED_ORIGINS = ['http://localhost:5173']
 
 if SAAS_PUBLIC_BASE_URL and SAAS_PUBLIC_BASE_URL not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(SAAS_PUBLIC_BASE_URL)
+
+if SAAS_ROOT_DOMAIN:
+    http_wildcard = f"http://*.{SAAS_ROOT_DOMAIN}"
+    https_wildcard = f"https://*.{SAAS_ROOT_DOMAIN}"
+    if http_wildcard not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(http_wildcard)
+    if https_wildcard not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(https_wildcard)
 # ============================================================
 
 # Configuración de cookies JWT

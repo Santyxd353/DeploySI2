@@ -8,6 +8,11 @@ class AppConfig {
     defaultValue: '',
   );
 
+  static const tenantSubdomainFromEnv = String.fromEnvironment(
+    'TENANT_SUBDOMAIN',
+    defaultValue: '',
+  );
+
   static String get apiBaseUrl {
     if (_apiBaseUrlFromEnv.isNotEmpty) {
       return _apiBaseUrlFromEnv;
