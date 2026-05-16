@@ -195,10 +195,7 @@ Orden minimo recomendado para un arranque limpio
 8. `docker compose exec backend python manage.py seed_roles_permisos --all-tenants --sincronizar-usuarios`
 9. `docker compose exec backend python manage.py seed_usuarios_demo --all-tenants --password SaludPlus2026* --reset-password`
 10. `docker compose exec backend python manage.py seed_productos --all-tenants`
-11. `docker compose exec backend python manage.py seed_categorias_subcategorias_demos --all-tenants`
-12. `docker compose exec backend python manage.py seed_laboratorios_demos --all-tenants`
 13. `docker compose exec backend python manage.py seed_ventas_historicas_fijo --all-tenants`
-14. `docker compose exec backend python manage.py seed_reportes_demo --all-tenants`
 15. `docker compose exec backend python manage.py check`
 
 
