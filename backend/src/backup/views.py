@@ -1,32 +1,39 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import BackupLog
-from .serializers import BackupLogSerializer
 from django.core.management import call_command
 from django.db import connection
 
+from .models import BackupLog, BackupSchedule
+from .serializers import BackupLogSerializer, BackupScheduleSerializer
+from tenants.models import Tenant
+
+
+# ──────────────────────────────────────────────
+# Vista para backups manuales (ya existente)
+# ──────────────────────────────────────────────
 class BackupViewSet(viewsets.ViewSet):
-    
+
     @action(detail=False, methods=['post'])
     def crear(self, request):
         """Ejecuta un backup manual"""
         try:
             call_command('backup_db', type='manual')
             return Response(
-                {'message': 'Backup creado exitosamente'}, 
+                {'message': 'Backup creado exitosamente'},
                 status=status.HTTP_200_OK
             )
         except Exception as e:
             return Response(
-                {'error': str(e)}, 
+                {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @action(detail=False, methods=['get'])
     def historial(self, request):
         """Lista los últimos backups realizados"""
-        logs = BackupLog.objects.all()[:50]  # Últimos 50 registros
+        logs = BackupLog.objects.all()[:50]
         serializer = BackupLogSerializer(logs, many=True)
         return Response(serializer.data)
 
@@ -72,3 +79,26 @@ class BackupViewSet(viewsets.ViewSet):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+# ──────────────────────────────────────────────
+# Vista para la programación automática (nueva)
+# ──────────────────────────────────────────────
+class BackupScheduleViewSet(viewsets.ModelViewSet):
+    """
+    CRUD para que cada tenant administre su propia programación de backups.
+    """
+    serializer_class = BackupScheduleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        schema_name = connection.schema_name
+        if schema_name == 'public':
+            return BackupSchedule.objects.none()
+        tenant = Tenant.objects.get(schema_name=schema_name)
+        return BackupSchedule.objects.filter(tenant=tenant)
+
+    def perform_create(self, serializer):
+        schema_name = connection.schema_name
+        tenant = Tenant.objects.get(schema_name=schema_name)
+        serializer.save(tenant=tenant)

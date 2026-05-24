@@ -13,6 +13,7 @@ import {
   HistoryIcon,
   RestoreIcon,
 } from "../../components/ui/Icons";
+import BackupScheduleForm from "../../components/admin/BackupScheduleForm";
 
 export default function AdminBackupsPage() {
   const [backups, setBackups] = useState([]);
@@ -254,6 +255,7 @@ export default function AdminBackupsPage() {
             )}
           </CardContent>
         </Card>
+        <BackupScheduleForm />
       </div>
 
       {/* Modal de confirmación de restauración */}

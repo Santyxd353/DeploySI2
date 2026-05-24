@@ -42,7 +42,7 @@ services:
       - "${DJANGO_PORT}:8000"
     volumes:
       - ./backend/src:/app
-      - ./backups:/app/backups   # Volumen de backups
+      - ./backups:/app/backups
 
   frontend:
     build:
@@ -55,7 +55,7 @@ services:
     environment:
       VITE_API_BASE_URL: http://localhost:${DJANGO_PORT}
       VITE_ROOT_DOMAIN: ${SAAS_ROOT_DOMAIN:-localhost}
-      VITE_STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY}   # Stripe para pasarela de pagos
+      VITE_STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY}
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "${REACT_PORT}:5173"
@@ -63,5 +63,70 @@ services:
       - ./frontend:/usr/src/app
       - /usr/src/app/node_modules
 
+  # --- NUEVOS SERVICIOS PARA BACKUP AUTOMÁTICO ---
+  redis:
+    image: redis:7-alpine
+    container_name: app_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+    ports:
+      - "6379:6379"
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app_worker
+    restart: unless-stopped
+    command: celery -A config worker -l info
+    env_file:
+      - ./.env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend/src:/app
+      - ./backups:/app/backups
+    networks:
+      - default
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app_beat
+    restart: unless-stopped
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file:
+      - ./.env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend/src:/app
+      - ./backups:/app/backups
+    networks:
+      - default
+
 volumes:
   postgres_data:
+  redis_data:

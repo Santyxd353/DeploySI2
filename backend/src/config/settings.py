@@ -45,6 +45,7 @@ SHARED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    "django_celery_beat",          
 ]
 
 TENANT_APPS = [
@@ -124,7 +125,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internacionalización
 LANGUAGE_CODE = "es-es"
-TIME_ZONE = "UTC"
+TIME_ZONE = "America/La_Paz"
 USE_I18N = True
 USE_TZ = True
 
@@ -301,3 +302,15 @@ LOGGING = {
         'level': 'DEBUG',
     },
 }
+
+
+
+
+# Celery
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'America/La_Paz'  # o la que uses
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
