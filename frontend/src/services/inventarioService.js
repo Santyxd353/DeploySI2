@@ -96,6 +96,24 @@ export const movimientosService = {
   listar: (params) => requestJsonWithAuthRetry(`/api/inventarios/movimientos/${buildQuery(params)}`),
 };
 
+export const lotesService = {
+  listar: (params) => requestJsonWithAuthRetry(`/api/inventarios/lotes/${buildQuery(params)}`),
+  crear: (data) => requestJsonWithAuthRetry('/api/inventarios/lotes/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }),
+  bloquear: (id) => requestJsonWithAuthRetry(`/api/inventarios/lotes/${id}/bloquear/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+  }),
+  anular: (id, data = {}) => requestJsonWithAuthRetry(`/api/inventarios/lotes/${id}/anular/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }),
+};
+
 export async function obtenerProductos(params) {
   return productosService.listar(params);
 }
@@ -110,8 +128,8 @@ export async function crearEntradaStock(data) {
   });
 }
 
-export async function obtenerEntradasStock() {
-  return requestJsonWithAuthRetry('/api/inventarios/entradas-stock/');
+export async function obtenerEntradasStock(params) {
+  return requestJsonWithAuthRetry(`/api/inventarios/entradas-stock/${buildQuery(params)}`);
 }
 
 export async function obtenerUltimasEntradas() {
@@ -120,4 +138,14 @@ export async function obtenerUltimasEntradas() {
 
 export async function obtenerEntradasPorProducto(productoId) {
   return requestJsonWithAuthRetry(`/api/inventarios/entradas-stock/por_producto/?producto_id=${productoId}`);
+}
+
+export async function confirmarEntradaStock(entradaId) {
+  return requestJsonWithAuthRetry(`/api/inventarios/entradas-stock/${entradaId}/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ estado: 'confirmada' }),
+  });
 }

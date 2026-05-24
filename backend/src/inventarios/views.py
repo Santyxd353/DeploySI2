@@ -5,15 +5,25 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db.models import F, Sum
+from django.utils.dateparse import parse_date
+from django.utils import timezone
+from datetime import datetime, time
 
 from core.rbac import tiene_permiso, ROLE_FARMACEUTICO
 from core.audit import log_system_event
+from inventarios.services.stock_service import (
+    StockServiceError,
+    ajustar_stock as stock_ajustar_stock,
+    aumentar_stock as stock_aumentar_stock,
+    descontar_stock as stock_descontar_stock,
+)
 from .models import (
     Categoria,
     Subcategoria,
     Laboratorio,
     Producto,
     Inventario,
+    LoteProducto,
     MovimientoInventario,
     EntradaStock,
 )
@@ -23,6 +33,7 @@ from .serializers import (
     LaboratorioSerializer,
     ProductoSerializer,
     InventarioSerializer,
+    LoteProductoSerializer,
     MovimientoInventarioSerializer,
     EntradaStockSerializer,
 )
@@ -194,6 +205,8 @@ class LaboratorioViewSet(viewsets.ModelViewSet):
 
 class ProductoPagination(PageNumberPagination):
     page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 
 class ProductoViewSet(viewsets.ModelViewSet):
@@ -325,14 +338,19 @@ class ProductoViewSet(viewsets.ModelViewSet):
             return Response({"error": "Se requiere tipo_movimiento, cantidad y motivo"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            movimiento = MovimientoInventario.objects.create(
-                producto=producto,
-                tipo_movimiento=tipo_movimiento,
-                cantidad=int(cantidad),
-                motivo=motivo,
-                observacion=observacion,
-                usuario=request.user,
-            )
+            if tipo_movimiento == "ajuste":
+                inventario, movimiento, _, _ = stock_ajustar_stock(
+                    producto=producto,
+                    nuevo_stock=int(cantidad),
+                    motivo=motivo,
+                    usuario=request.user,
+                    observacion=observacion,
+                )
+            else:
+                return Response(
+                    {"error": "En este endpoint solo se permite tipo_movimiento='ajuste'."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             log_system_event(
                 request=request,
@@ -344,7 +362,6 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 entidad_id=str(producto.id),
             )
 
-            inventario = Inventario.objects.get(producto=producto)
             return Response(
                 {
                     "message": "Stock ajustado correctamente",
@@ -353,7 +370,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_200_OK,
             )
-        except ValueError as e:
+        except StockServiceError as e:
             log_system_event(
                 request=request,
                 accion="AJUSTE_STOCK",
@@ -395,6 +412,58 @@ class ProductoViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class LoteProductoViewSet(viewsets.ModelViewSet):
+    queryset = LoteProducto.objects.all()
+    serializer_class = LoteProductoSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["numero_lote", "producto__sku", "producto__nombre_comercial", "proveedor"]
+    ordering_fields = ["fecha_ingreso", "numero_lote", "fecha_vencimiento", "created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related("producto")
+        producto_id = self.request.query_params.get("producto") or self.request.query_params.get("producto_id")
+        if producto_id:
+            queryset = queryset.filter(producto_id=producto_id)
+        estado = self.request.query_params.get("estado")
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        return queryset.order_by("-fecha_ingreso")
+
+    @action(detail=True, methods=["patch"])
+    def bloquear(self, request, pk=None):
+        lote = self.get_object()
+        if lote.estado in {"retirado", "vencido"}:
+            return Response({"detail": "El lote ya no está disponible para bloqueo."}, status=status.HTTP_400_BAD_REQUEST)
+        lote.estado = "bloqueado"
+        lote.save(update_fields=["estado", "updated_at"])
+        return Response(self.get_serializer(lote).data)
+
+    @action(detail=True, methods=["post"])
+    def anular(self, request, pk=None):
+        lote = self.get_object()
+        motivo_anulacion = request.data.get("motivo_anulacion", "alerta_fabricante")
+        observacion = request.data.get("observacion", "")
+        cantidad_a_descontar = int(lote.cantidad_disponible or 0)
+
+        if cantidad_a_descontar > 0:
+            motivo_mov = "merma" if motivo_anulacion == "vencimiento" else "devolucion_proveedor"
+            stock_descontar_stock(
+                producto=lote.producto,
+                cantidad=cantidad_a_descontar,
+                motivo=motivo_mov,
+                referencia=f"ANUL-LOTE-{lote.id}",
+                usuario=request.user,
+                observacion=observacion or f"Anulación de lote {lote.numero_lote}",
+                lote=lote,
+            )
+
+        lote.cantidad_disponible = 0
+        lote.estado = "vencido" if motivo_anulacion == "vencimiento" else "retirado"
+        lote.save(update_fields=["cantidad_disponible", "estado", "updated_at"])
+        return Response(self.get_serializer(lote).data)
+
+
 class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MovimientoInventario.objects.all()
     serializer_class = MovimientoInventarioSerializer
@@ -406,13 +475,31 @@ class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset().select_related("producto", "usuario")
 
-        producto_id = self.request.query_params.get("producto")
+        producto_id = self.request.query_params.get("producto") or self.request.query_params.get("producto_id")
         if producto_id:
             queryset = queryset.filter(producto_id=producto_id)
 
         tipo = self.request.query_params.get("tipo_movimiento")
         if tipo:
             queryset = queryset.filter(tipo_movimiento=tipo)
+
+        fecha_desde = self.request.query_params.get("fecha_desde")
+        if fecha_desde:
+            parsed_from = parse_date(fecha_desde)
+            if parsed_from:
+                dt_from = datetime.combine(parsed_from, time.min)
+                if timezone.is_naive(dt_from):
+                    dt_from = timezone.make_aware(dt_from)
+                queryset = queryset.filter(fecha_movimiento__gte=dt_from)
+
+        fecha_hasta = self.request.query_params.get("fecha_hasta")
+        if fecha_hasta:
+            parsed_to = parse_date(fecha_hasta)
+            if parsed_to:
+                dt_to = datetime.combine(parsed_to, time.max)
+                if timezone.is_naive(dt_to):
+                    dt_to = timezone.make_aware(dt_to)
+                queryset = queryset.filter(fecha_movimiento__lte=dt_to)
 
         return queryset
 
@@ -423,7 +510,30 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return super().get_queryset().select_related("producto", "usuario").order_by("-created_at")
+        return super().get_queryset().select_related("producto", "usuario", "lote").order_by("-created_at")
+
+    def _confirmar_entrada(self, entrada, usuario):
+        if entrada.estado == "confirmada":
+            return
+        if entrada.estado == "anulada":
+            raise StockServiceError("No se puede confirmar una entrada anulada.")
+
+        stock_aumentar_stock(
+            producto=entrada.producto,
+            cantidad=entrada.cantidad,
+            motivo=entrada.motivo,
+            referencia=entrada.referencia or "",
+            usuario=usuario,
+            observacion=entrada.descripcion or "",
+            lote=entrada.lote,
+        )
+
+        if entrada.lote:
+            entrada.lote.cantidad_disponible = F("cantidad_disponible") + entrada.cantidad
+            entrada.lote.save(update_fields=["cantidad_disponible", "updated_at"])
+
+        entrada.estado = "confirmada"
+        entrada.save(update_fields=["estado", "updated_at"])
 
     def perform_create(self, serializer):
         instance = serializer.save(usuario=self.request.user)
@@ -438,7 +548,10 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        estado_anterior = serializer.instance.estado
         instance = serializer.save()
+        if estado_anterior != "confirmada" and instance.estado == "confirmada":
+            self._confirmar_entrada(instance, self.request.user)
         log_system_event(
             request=self.request,
             accion="UPDATE",
@@ -501,3 +614,4 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         entradas = self.get_queryset()[:10]
         serializer = self.get_serializer(entradas, many=True)
         return Response(serializer.data)
+

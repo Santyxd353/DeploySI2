@@ -3,7 +3,6 @@ from django.core.validators import MinValueValidator
 from django.conf import settings
 from tenants.mixins import TenantAwareModel
 
-
 class Categoria(TenantAwareModel):
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True)
@@ -161,6 +160,47 @@ class Inventario(TenantAwareModel):
         return f"Inventario - {self.producto.nombre_comercial}: {self.stock_actual} unidades"
 
 
+class LoteProducto(TenantAwareModel):
+    ESTADO_CHOICES = [
+        ("disponible", "Disponible"),
+        ("agotado", "Agotado"),
+        ("vencido", "Vencido"),
+        ("bloqueado", "Bloqueado"),
+        ("danado", "Dañado"),
+        ("retirado", "Retirado"),
+    ]
+
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="lotes",
+    )
+    numero_lote = models.CharField(max_length=100)
+    fecha_fabricacion = models.DateField(null=True, blank=True)
+    fecha_vencimiento = models.DateField(null=True, blank=True)
+    cantidad_inicial = models.PositiveIntegerField(default=0)
+    cantidad_disponible = models.PositiveIntegerField(default=0)
+    precio_compra = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    proveedor = models.CharField(max_length=200, blank=True)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="disponible")
+    fecha_ingreso = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Lote de Producto"
+        verbose_name_plural = "Lotes de Producto"
+        ordering = ["producto", "fecha_vencimiento", "numero_lote"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "producto", "numero_lote"],
+                name="uq_loteproducto_tenant_numero_lote",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.producto.sku} - {self.numero_lote}"
+
+
 class MovimientoInventario(TenantAwareModel):
     TIPO_MOVIMIENTO_CHOICES = [
         ("entrada", "Entrada"),
@@ -178,9 +218,22 @@ class MovimientoInventario(TenantAwareModel):
         ("transferencia", "Transferencia"),
     ]
 
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name="movimientos")
-    tipo_movimiento = models.CharField(max_length=10, choices=TIPO_MOVIMIENTO_CHOICES)
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="movimientos",
+    )
+    lote = models.ForeignKey(
+        "LoteProducto",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="movimientos",
+    )
+    tipo_movimiento = models.CharField(max_length=20, choices=TIPO_MOVIMIENTO_CHOICES)
     cantidad = models.PositiveIntegerField()
+    stock_anterior = models.PositiveIntegerField(null=True, blank=True)
+    stock_posterior = models.PositiveIntegerField(null=True, blank=True)
     motivo = models.CharField(max_length=20, choices=MOTIVO_CHOICES)
     referencia = models.CharField(max_length=100, blank=True, help_text="N° factura, orden de compra, etc.")
     usuario = models.ForeignKey(
@@ -202,26 +255,7 @@ class MovimientoInventario(TenantAwareModel):
             models.Index(fields=["tipo_movimiento"]),
         ]
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        inventario, _ = Inventario.objects.get_or_create(
-            producto=self.producto,
-            defaults={"stock_minimo": self.producto.stock_minimo},
-        )
 
-        if self.tipo_movimiento == "entrada":
-            inventario.stock_actual += self.cantidad
-            inventario.ultima_entrada_fecha = self.fecha_movimiento
-        elif self.tipo_movimiento == "salida":
-            if inventario.stock_actual >= self.cantidad:
-                inventario.stock_actual -= self.cantidad
-                inventario.ultima_salida_fecha = self.fecha_movimiento
-            else:
-                raise ValueError(f"Stock insuficiente. Stock actual: {inventario.stock_actual}")
-        elif self.tipo_movimiento == "ajuste":
-            inventario.stock_actual = self.cantidad
-
-        inventario.save()
 
     def __str__(self):
         return f"{self.get_tipo_movimiento_display()} - {self.producto.sku} x{self.cantidad} - {self.fecha_movimiento}"
@@ -235,11 +269,27 @@ class EntradaStock(TenantAwareModel):
         ("correccion", "Corrección de Conteo"),
         ("otro", "Otro"),
     ]
+    ESTADO_CHOICES = [
+        ("pendiente", "Pendiente"),
+        ("confirmada", "Confirmada"),
+        ("anulada", "Anulada"),
+    ]
 
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name="entradas")
-    cantidad = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="entradas",
+    )
+    lote = models.ForeignKey(
+        "LoteProducto",
+        on_delete=models.PROTECT,
+        related_name="entradas",
+    )
+    cantidad = models.PositiveIntegerField()
     motivo = models.CharField(max_length=20, choices=MOTIVOS_CHOICES)
+    referencia = models.CharField(max_length=100, blank=True)
     descripcion = models.TextField(blank=True, null=True)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="pendiente")
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -252,14 +302,8 @@ class EntradaStock(TenantAwareModel):
     def __str__(self):
         return f"{self.producto.nombre_comercial} - {self.cantidad} unidades ({self.motivo})"
 
-    def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
-        if is_new:
-            inventario, _ = Inventario.objects.get_or_create(
-                producto=self.producto,
-                defaults={"stock_minimo": self.producto.stock_minimo},
-            )
-            inventario.stock_actual += self.cantidad
-            inventario.ultima_entrada_fecha = self.created_at
-            inventario.save(update_fields=["stock_actual", "ultima_entrada_fecha", "updated_at"])
+
+
+
+
+
