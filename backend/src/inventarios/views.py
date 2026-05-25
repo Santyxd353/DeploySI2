@@ -608,11 +608,11 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return super().get_queryset().select_related("producto", "usuario", "lote").order_by("-created_at")
 
-    def _confirmar_entrada(self, entrada, usuario):
-        if entrada.estado == "confirmada":
-            return
+    def _confirmar_entrada(self, entrada, usuario, force=False):
         if entrada.estado == "anulada":
             raise StockServiceError("No se puede confirmar una entrada anulada.")
+        if entrada.estado == "confirmada" and not force:
+            return
 
         stock_aumentar_stock(
             producto=entrada.producto,
@@ -633,6 +633,8 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(usuario=self.request.user)
+        if instance.estado == "confirmada":
+            self._confirmar_entrada(instance, self.request.user, force=True)
         log_system_event(
             request=self.request,
             accion="ENTRADA_STOCK",
@@ -647,7 +649,7 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         estado_anterior = serializer.instance.estado
         instance = serializer.save()
         if estado_anterior != "confirmada" and instance.estado == "confirmada":
-            self._confirmar_entrada(instance, self.request.user)
+            self._confirmar_entrada(instance, self.request.user, force=True)
         log_system_event(
             request=self.request,
             accion="UPDATE",
