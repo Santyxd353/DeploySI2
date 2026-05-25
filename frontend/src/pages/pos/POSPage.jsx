@@ -95,6 +95,7 @@ export default function POSPage() {
           cantidad: 1,
           subtotal: Number(producto.precio_venta),
           stock_disponible: producto.inventario?.stock_disponible ?? 0,
+          requiere_receta: Boolean(producto.requiere_receta),
         },
       ];
     });
@@ -129,21 +130,18 @@ export default function POSPage() {
     setProcessing(true);
     setError(null);
     try {
+      const { selectedRecetaId, cliente_id, cliente_data } = clienteData;
       const payload = {
         items: cart.map((item) => ({
           producto_id: item.producto_id,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario,
+          ...(item.requiere_receta && selectedRecetaId
+            ? { receta_id: selectedRecetaId }
+            : {}),
         })),
         estado: "pagada",
-        ...(clienteData.cliente_id
-          ? { cliente_id: clienteData.cliente_id }
-          : {
-              cliente_data: {
-                nombres: clienteData.nombres || "Cliente",
-                apellidos: clienteData.apellidos || "Mostrador",
-              },
-            }),
+        ...(cliente_id ? { cliente_id } : { cliente_data }),
       };
       const result = await crearVentaPOS(payload);
       setSaleResult(result);

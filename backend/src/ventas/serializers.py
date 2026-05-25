@@ -9,6 +9,7 @@ class VentaItemInputSerializer(serializers.Serializer):
     producto_id = serializers.IntegerField(min_value=1)
     cantidad = serializers.IntegerField(min_value=1)
     precio_unitario = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    receta_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
 
 
 class VentaCreateInputSerializer(serializers.Serializer):
@@ -29,6 +30,7 @@ class POSItemInputSerializer(serializers.Serializer):
     producto_id = serializers.IntegerField(min_value=1)
     cantidad = serializers.IntegerField(min_value=1)
     precio_unitario = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    receta_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
 
 
 class POSClienteInputSerializer(serializers.Serializer):
