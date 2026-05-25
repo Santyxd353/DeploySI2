@@ -175,6 +175,14 @@ function truncateText(text, maxLength = 28) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
 }
 
+function formatPercent(value, total) {
+  if (!total) return "0%";
+  return `${((Math.max(value, 0) / total) * 100).toLocaleString("es-BO", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 function makeChartCanvas(width = 1200, height = 620) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -186,28 +194,28 @@ function makeChartCanvas(width = 1200, height = 620) {
 }
 
 function createBarChartImage(rows, valueType, title = "Grafico principal") {
-  const { canvas, ctx } = makeChartCanvas();
+  const { canvas, ctx } = makeChartCanvas(1600, 480);
   ctx.fillStyle = "#0f172a";
-  ctx.font = "700 34px Sora, Arial, sans-serif";
-  ctx.fillText(title, 48, 54);
+  ctx.font = "800 38px Sora, Arial, sans-serif";
+  ctx.fillText(title, 60, 58);
   ctx.fillStyle = "#64748b";
-  ctx.font = "500 22px Sora, Arial, sans-serif";
-  ctx.fillText("Comparacion de los principales registros", 48, 88);
+  ctx.font = "500 23px Sora, Arial, sans-serif";
+  ctx.fillText("Comparacion de los principales registros", 60, 92);
 
   if (!rows.length) {
     ctx.fillStyle = "#94a3b8";
     ctx.font = "700 30px Sora, Arial, sans-serif";
-    ctx.fillText("Sin datos para graficar", 420, 320);
+    ctx.fillText("Sin datos para graficar", 610, 270);
     return canvas.toDataURL("image/png");
   }
 
   const chartRows = rows.slice(0, 9);
   const max = Math.max(...chartRows.map((row) => Math.abs(row.value)), 1);
-  const left = 260;
-  const top = 125;
-  const barHeight = 32;
-  const gap = 22;
-  const barMaxWidth = 760;
+  const left = 460;
+  const top = 122;
+  const barHeight = 27;
+  const gap = 17;
+  const barMaxWidth = 780;
 
   chartRows.forEach((row, index) => {
     const y = top + index * (barHeight + gap);
@@ -215,9 +223,9 @@ function createBarChartImage(rows, valueType, title = "Grafico principal") {
     const color = CHART_COLORS[index % CHART_COLORS.length];
 
     ctx.fillStyle = "#334155";
-    ctx.font = "700 21px Sora, Arial, sans-serif";
+    ctx.font = "800 20px Sora, Arial, sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(truncateText(row.label, 23), left - 24, y + 23);
+    ctx.fillText(truncateText(row.label, 38), left - 28, y + 20);
 
     ctx.fillStyle = "#e2e8f0";
     roundRect(ctx, left, y, barMaxWidth, barHeight, 16);
@@ -230,25 +238,25 @@ function createBarChartImage(rows, valueType, title = "Grafico principal") {
     ctx.fillStyle = "#0f172a";
     ctx.font = "800 20px Sora, Arial, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(formatValue(row.value, valueType), left + barMaxWidth + 28, y + 23);
+    ctx.fillText(formatValue(row.value, valueType), left + barMaxWidth + 32, y + 20);
   });
 
   return canvas.toDataURL("image/png");
 }
 
 function createLineChartImage(rows, valueType) {
-  const { canvas, ctx } = makeChartCanvas();
+  const { canvas, ctx } = makeChartCanvas(1600, 480);
   ctx.fillStyle = "#0f172a";
-  ctx.font = "700 34px Sora, Arial, sans-serif";
-  ctx.fillText("Tendencia principal", 48, 54);
+  ctx.font = "800 38px Sora, Arial, sans-serif";
+  ctx.fillText("Tendencia principal", 60, 58);
   ctx.fillStyle = "#64748b";
-  ctx.font = "500 22px Sora, Arial, sans-serif";
-  ctx.fillText("Evolucion de valores en el periodo", 48, 88);
+  ctx.font = "500 23px Sora, Arial, sans-serif";
+  ctx.fillText("Evolucion de valores en el periodo", 60, 92);
 
   if (rows.length < 2) {
     ctx.fillStyle = "#94a3b8";
     ctx.font = "700 30px Sora, Arial, sans-serif";
-    ctx.fillText("No hay suficientes puntos para tendencia", 330, 320);
+    ctx.fillText("No hay suficientes puntos para tendencia", 520, 270);
     return canvas.toDataURL("image/png");
   }
 
@@ -257,10 +265,10 @@ function createLineChartImage(rows, valueType) {
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const range = Math.max(max - min, 1);
-  const left = 80;
-  const top = 125;
-  const width = 1040;
-  const height = 360;
+  const left = 95;
+  const top = 122;
+  const width = 1410;
+  const height = 250;
 
   ctx.strokeStyle = "#e2e8f0";
   ctx.lineWidth = 2;
@@ -305,62 +313,90 @@ function createLineChartImage(rows, valueType) {
   ctx.fillStyle = "#475569";
   ctx.font = "700 19px Sora, Arial, sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText(truncateText(chartRows[0]?.label, 18), left, top + height + 50);
+  ctx.fillText(truncateText(chartRows[0]?.label, 24), left, top + height + 48);
   ctx.textAlign = "center";
   ctx.fillText(formatValue(max, valueType), left + width / 2, top + height + 50);
   ctx.textAlign = "right";
-  ctx.fillText(truncateText(chartRows[chartRows.length - 1]?.label, 18), left + width, top + height + 50);
+  ctx.fillText(truncateText(chartRows[chartRows.length - 1]?.label, 24), left + width, top + height + 48);
 
   return canvas.toDataURL("image/png");
 }
 
 function createDonutChartImage(rows, valueType) {
-  const { canvas, ctx } = makeChartCanvas(900, 620);
+  const { canvas, ctx } = makeChartCanvas(1600, 560);
   ctx.fillStyle = "#0f172a";
-  ctx.font = "700 32px Sora, Arial, sans-serif";
-  ctx.fillText("Distribucion", 44, 54);
+  ctx.font = "800 40px Sora, Arial, sans-serif";
+  ctx.fillText("Distribucion", 60, 60);
   ctx.fillStyle = "#64748b";
-  ctx.font = "500 20px Sora, Arial, sans-serif";
-  ctx.fillText("Participacion porcentual por registro", 44, 86);
+  ctx.font = "500 24px Sora, Arial, sans-serif";
+  ctx.fillText("Participacion porcentual por registro", 60, 98);
 
-  const chartRows = rows.slice(0, 6);
+  const chartRows = rows.slice(0, 12);
   const total = chartRows.reduce((sum, row) => sum + Math.max(row.value, 0), 0);
   if (!chartRows.length || !total) {
     ctx.fillStyle = "#94a3b8";
-    ctx.font = "700 28px Sora, Arial, sans-serif";
-    ctx.fillText("Sin datos de distribucion", 260, 320);
+    ctx.font = "700 30px Sora, Arial, sans-serif";
+    ctx.fillText("Sin datos de distribucion", 560, 290);
     return canvas.toDataURL("image/png");
   }
 
-  const left = 54;
-  const top = 135;
-  const barWidth = 690;
-  const barHeight = 34;
-  const gap = 42;
+  const centerX = 190;
+  const centerY = 285;
+  const radius = 118;
+  const innerRadius = 70;
+  let startAngle = -Math.PI / 2;
+  chartRows.forEach((row, index) => {
+    const slice = (Math.max(row.value, 0) / total) * Math.PI * 2;
+    const endAngle = startAngle + slice;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = CHART_COLORS[index % CHART_COLORS.length];
+    ctx.fill();
+    startAngle = endAngle;
+  });
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, innerRadius, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "800 17px Sora, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TOTAL", centerX, centerY - 8);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 24px Sora, Arial, sans-serif";
+  ctx.fillText(formatValue(total, valueType).slice(0, 16), centerX, centerY + 22);
+
+  const left = 410;
+  const top = 126;
+  const barWidth = 760;
+  const barHeight = 16;
+  const rowHeight = 35;
   ctx.textAlign = "left";
   chartRows.forEach((row, index) => {
-    const y = top + index * (barHeight + gap);
+    const y = top + index * rowHeight;
     const percent = Math.max(row.value, 0) / total;
     const color = CHART_COLORS[index % CHART_COLORS.length];
     ctx.fillStyle = "#334155";
-    ctx.font = "800 19px Sora, Arial, sans-serif";
-    ctx.fillText(truncateText(row.label, 38), left, y - 10);
+    ctx.font = "800 18px Sora, Arial, sans-serif";
+    ctx.fillText(truncateText(row.label, 40), left, y);
 
     ctx.fillStyle = "#e2e8f0";
-    roundRect(ctx, left, y, barWidth, barHeight, 14);
+    roundRect(ctx, left, y + 12, barWidth, barHeight, 9);
     ctx.fill();
 
     ctx.fillStyle = color;
-    roundRect(ctx, left, y, Math.max(16, percent * barWidth), barHeight, 14);
+    roundRect(ctx, left, y + 12, Math.max(8, percent * barWidth), barHeight, 9);
     ctx.fill();
 
     ctx.fillStyle = "#334155";
-    ctx.font = "800 18px Sora, Arial, sans-serif";
-    ctx.fillText(`${Math.round(percent * 100)}%`, left + barWidth + 26, y + 23);
+    ctx.font = "900 18px Sora, Arial, sans-serif";
+    ctx.fillText(formatPercent(row.value, total), left + barWidth + 35, y + 2);
 
     ctx.fillStyle = "#64748b";
     ctx.font = "700 16px Sora, Arial, sans-serif";
-    ctx.fillText(formatValue(row.value, valueType), left + barWidth + 26, y + 48);
+    ctx.fillText(formatValue(row.value, valueType), left + barWidth + 35, y + 24);
   });
 
   return canvas.toDataURL("image/png");
@@ -585,7 +621,7 @@ function ReportControlPanel({
 
 function AiCommandBar({ aiText, setAiText, onText, onAudio, recording, loadingReport, audioLoading }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700">
@@ -610,7 +646,7 @@ function AiCommandBar({ aiText, setAiText, onText, onAudio, recording, loadingRe
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_140px_140px]">
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_140px]">
         <Input
           value={aiText}
           onChange={(event) => setAiText(event.target.value)}
@@ -618,7 +654,7 @@ function AiCommandBar({ aiText, setAiText, onText, onAudio, recording, loadingRe
           className="h-11"
         />
         <Button onClick={onText} disabled={loadingReport || audioLoading}>
-          Generar IA
+          {loadingReport ? "Generando IA" : "Generar IA"}
         </Button>
         <Button
           variant={recording ? "default" : "secondary"}
@@ -626,7 +662,7 @@ function AiCommandBar({ aiText, setAiText, onText, onAudio, recording, loadingRe
           disabled={audioLoading || loadingReport}
           className={recording ? "bg-rose-700 hover:bg-rose-600" : ""}
         >
-          {recording ? "Detener" : audioLoading ? "Procesando" : "Audio"}
+          {recording ? "Detener" : audioLoading ? "Transcribiendo" : "Audio"}
         </Button>
       </div>
     </section>
@@ -726,12 +762,12 @@ function LineChart({ rows, valueType }) {
 
 function DonutChart({ rows, valueType }) {
   if (!rows.length) return <EmptyChart message="Sin distribucion disponible." />;
-  const total = rows.reduce((sum, row) => sum + Math.max(row.value, 0), 0);
+  const distributionRows = rows.slice(0, 12);
+  const total = distributionRows.reduce((sum, row) => sum + Math.max(row.value, 0), 0);
   if (!total) return <EmptyChart message="Los valores estan en cero." />;
 
   let offset = 0;
-  const segments = rows
-    .slice(0, 6)
+  const segments = distributionRows
     .map((row, index) => {
       const start = offset;
       const end = start + (Math.max(row.value, 0) / total) * 100;
@@ -741,39 +777,43 @@ function DonutChart({ rows, valueType }) {
     .join(", ");
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)] lg:items-center">
-      <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+    <div className="grid gap-5 2xl:grid-cols-[190px_minmax(0,1fr)] 2xl:items-start">
+      <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
         <div
-          className="mx-auto flex h-32 w-32 items-center justify-center rounded-[2rem] shadow-inner"
+          className="mx-auto flex h-36 w-36 items-center justify-center rounded-[2.25rem] shadow-inner"
           style={{ background: `conic-gradient(${segments})` }}
         >
-          <div className="flex h-[5.2rem] w-[5.2rem] flex-col items-center justify-center rounded-3xl bg-white text-center shadow-sm">
+          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-3xl bg-white text-center shadow-sm">
             <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Total</span>
-            <span className="text-sm font-black text-slate-900">{formatValue(total, valueType)}</span>
+            <span className="max-w-20 break-words text-sm font-black leading-tight text-slate-900">{formatValue(total, valueType)}</span>
           </div>
         </div>
       </div>
-      <div className="space-y-2">
-        {rows.slice(0, 6).map((row, index) => (
-          <div key={`${row.label}-${index}`} className="rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm">
-            <div className="mb-1 flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2 text-xs font-bold text-slate-700">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
-                <span className="truncate">{row.label}</span>
-              </span>
-              <span className="text-xs font-black text-slate-900">{Math.round((row.value / total) * 100)}%</span>
+      <div className="grid gap-3">
+        {distributionRows.map((row, index) => {
+          const color = CHART_COLORS[index % CHART_COLORS.length];
+          return (
+            <div key={`${row.label}-${index}`} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+              <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                <span className="flex min-w-0 items-start gap-2 text-xs font-bold leading-snug text-slate-700">
+                  <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="break-words">{row.label}</span>
+                </span>
+                <span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-900">{formatPercent(row.value, total)}</span>
+              </div>
+              <div className="mb-2 text-xs font-semibold text-slate-500">{formatValue(row.value, valueType)}</div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(4, (row.value / total) * 100)}%`,
+                    backgroundColor: color,
+                  }}
+                />
+              </div>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${Math.max(4, (row.value / total) * 100)}%`,
-                  backgroundColor: CHART_COLORS[index % CHART_COLORS.length],
-                }}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -781,8 +821,8 @@ function DonutChart({ rows, valueType }) {
 
 function ChartShell({ title, subtitle, children, className = "" }) {
   return (
-    <section className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <section className={`rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
+      <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-black text-slate-950">{title}</h3>
           <p className="text-xs text-slate-500">{subtitle}</p>
@@ -835,7 +875,7 @@ function DashboardPreview({ selectedReport, activeCategory, onGenerate }) {
         <MetricCard label="Alertas" value="-" detail="Stock, fallos o vencidos" tone="warning" />
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)]">
         <ChartShell title="Grafico principal" subtitle="Aqui aparecera la tendencia o comparacion principal.">
           <BarChart rows={previewBars} compact />
         </ChartShell>
@@ -937,7 +977,7 @@ function ResultsDashboard({ result, tableSearch, setTableSearch, onCsv, onPdf })
         ) : null}
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)]">
         <ChartShell
           title={result?.grafico?.tipo === "line" ? "Tendencia principal" : "Comparacion principal"}
           subtitle="Valores relevantes segun el reporte generado."
@@ -1375,36 +1415,21 @@ export default function AdminReportesPage() {
         : createBarChartImage(chartRows, valueType, result?.grafico?.tipo === "line" ? "Tendencia principal" : "Grafico principal");
     const distributionImage = createDonutChartImage(chartRows, valueType);
 
-    if (isPortrait) {
-      const chartHeight = 60;
-      setPdfFill(doc, "#ffffff");
-      doc.roundedRect(margin, cursorY, contentWidth, chartHeight, 4, 4, "F");
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(margin, cursorY, contentWidth, chartHeight, 4, 4, "S");
-      doc.addImage(mainChartImage, "PNG", margin + 2, cursorY + 3, contentWidth - 4, chartHeight - 6);
-      cursorY += chartHeight + 6;
+    const chartHeight = isPortrait ? 58 : 66;
+    setPdfFill(doc, "#ffffff");
+    doc.roundedRect(margin, cursorY, contentWidth, chartHeight, 4, 4, "F");
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, cursorY, contentWidth, chartHeight, 4, 4, "S");
+    doc.addImage(mainChartImage, "PNG", margin + 2, cursorY + 3, contentWidth - 4, chartHeight - 6);
+    cursorY += chartHeight + 6;
 
-      const distributionHeight = 54;
-      setPdfFill(doc, "#ffffff");
-      doc.roundedRect(margin, cursorY, contentWidth, distributionHeight, 4, 4, "F");
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(margin, cursorY, contentWidth, distributionHeight, 4, 4, "S");
-      doc.addImage(distributionImage, "PNG", margin + 2, cursorY + 3, contentWidth - 4, distributionHeight - 6);
-      cursorY += distributionHeight + 7;
-    } else {
-      const leftChartWidth = 174;
-      const rightChartWidth = contentWidth - leftChartWidth - gap;
-      const chartHeight = 72;
-      setPdfFill(doc, "#ffffff");
-      doc.roundedRect(margin, cursorY, leftChartWidth, chartHeight, 4, 4, "F");
-      doc.roundedRect(margin + leftChartWidth + gap, cursorY, rightChartWidth, chartHeight, 4, 4, "F");
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(margin, cursorY, leftChartWidth, chartHeight, 4, 4, "S");
-      doc.roundedRect(margin + leftChartWidth + gap, cursorY, rightChartWidth, chartHeight, 4, 4, "S");
-      doc.addImage(mainChartImage, "PNG", margin + 2, cursorY + 3, leftChartWidth - 4, chartHeight - 6);
-      doc.addImage(distributionImage, "PNG", margin + leftChartWidth + gap + 2, cursorY + 3, rightChartWidth - 4, chartHeight - 6);
-      cursorY += chartHeight + 8;
-    }
+    const distributionHeight = isPortrait ? 92 : 88;
+    setPdfFill(doc, "#ffffff");
+    doc.roundedRect(margin, cursorY, contentWidth, distributionHeight, 4, 4, "F");
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, cursorY, contentWidth, distributionHeight, 4, 4, "S");
+    doc.addImage(distributionImage, "PNG", margin + 2, cursorY + 3, contentWidth - 4, distributionHeight - 6);
+    cursorY += distributionHeight + 8;
 
     if (cursorY > pageHeight - 55) {
       doc.addPage();
@@ -1500,7 +1525,7 @@ export default function AdminReportesPage() {
           </Alert>
         ) : null}
 
-        <section className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
           <ReportControlPanel
             catalog={catalog}
             categories={categories}

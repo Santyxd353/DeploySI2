@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: app_db
+    container_name: farmacia_project_db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -21,7 +21,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: app_backend
+    container_name: farmacia_project_backend
     restart: unless-stopped
     env_file:
       - ./.env
@@ -48,7 +48,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: app_frontend
+    container_name: farmacia_project_frontend
     restart: unless-stopped
     depends_on:
       - backend
@@ -66,20 +66,20 @@ services:
   # --- NUEVOS SERVICIOS PARA BACKUP AUTOMÁTICO ---
   redis:
     image: redis:7-alpine
-    container_name: app_redis
+    container_name: farmacia_project_redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
     networks:
       - default
     ports:
-      - "6379:6379"
+      - "16379:6379"
 
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: app_worker
+    container_name: farmacia_project_worker
     restart: unless-stopped
     command: celery -A config worker -l info
     env_file:
@@ -90,6 +90,7 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
+      - RUN_MIGRATIONS=false
     depends_on:
       db:
         condition: service_healthy
@@ -105,7 +106,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: app_beat
+    container_name: farmacia_project_beat
     restart: unless-stopped
     command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     env_file:
@@ -116,6 +117,7 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
+      - RUN_MIGRATIONS=false
     depends_on:
       db:
         condition: service_healthy

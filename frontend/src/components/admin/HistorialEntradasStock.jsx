@@ -1,26 +1,56 @@
 import { useState, useEffect } from "react";
-import { obtenerUltimasEntradas } from "../../services/inventarioService";
+import { confirmarEntradaStock, obtenerEntradasStock } from "../../services/inventarioService";
 
 export default function HistorialEntradasStock({ refresh = 0 }) {
+  const PAGE_SIZE = 6;
   const [entradas, setEntradas] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [confirmingId, setConfirmingId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    cargarEntradas();
+    setPage(1);
   }, [refresh]);
+
+  useEffect(() => {
+    cargarEntradas();
+  }, [refresh, page]);
 
   const cargarEntradas = async () => {
     try {
       setLoading(true);
       setError("");
-      const data = await obtenerUltimasEntradas();
-      setEntradas(data.results || data);
+      const data = await obtenerEntradasStock({ page, page_size: PAGE_SIZE, ordering: "-created_at" });
+      const rows = Array.isArray(data) ? data : data.results || [];
+      const ordered = [...rows].sort((a, b) => {
+        const aPending = a?.estado === "pendiente" ? 0 : 1;
+        const bPending = b?.estado === "pendiente" ? 0 : 1;
+        if (aPending !== bPending) return aPending - bPending;
+        return new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime();
+      });
+      setEntradas(ordered);
+      setTotalCount(Array.isArray(data) ? ordered.length : data.count || ordered.length);
     } catch (error) {
       console.error("Error cargando entradas:", error);
       setError("Error al cargar el historial.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirmarEntrada = async (entradaId) => {
+    try {
+      setConfirmingId(entradaId);
+      setError("");
+      await confirmarEntradaStock(entradaId);
+      await cargarEntradas();
+    } catch (confirmError) {
+      console.error("Error confirmando entrada:", confirmError);
+      setError(confirmError?.message || "No se pudo confirmar la entrada.");
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -45,6 +75,8 @@ export default function HistorialEntradasStock({ refresh = 0 }) {
     };
     return motivos[motivo] || motivo;
   };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-md mt-8">
@@ -77,7 +109,9 @@ export default function HistorialEntradasStock({ refresh = 0 }) {
                 <th className="px-4 py-3 text-left font-semibold text-slate-700">PRODUCTO</th>
                 <th className="px-4 py-3 text-center font-semibold text-slate-700">CANTIDAD</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-700">MOTIVO</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-700">ESTADO</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-700">USUARIO</th>
+                <th className="px-4 py-3 text-right font-semibold text-slate-700">ACCION</th>
               </tr>
             </thead>
             <tbody>
@@ -101,12 +135,62 @@ export default function HistorialEntradasStock({ refresh = 0 }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-700 text-xs">
+                    <span
+                      className={`inline-block rounded px-2 py-1 text-xs font-medium ${
+                        entrada.estado === "pendiente"
+                          ? "bg-amber-100 text-amber-800"
+                          : entrada.estado === "confirmada"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {entrada.estado_display || entrada.estado || "-"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 text-xs">
                     {entrada.usuario_nombre || "Sistema"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {entrada.estado === "pendiente" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmarEntrada(entrada.id)}
+                        disabled={confirmingId === entrada.id}
+                        className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+                      >
+                        {confirmingId === entrada.id ? "Confirmando..." : "Confirmar entrada"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <span className="text-slate-600">
+            Mostrando pagina {page} de {totalPages} · {totalCount} registros
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1 || loading}
+              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages || loading}
+              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -4,7 +4,8 @@ from django.utils import timezone
 from django.db import transaction
 from django.conf import settings
 from clientes.models import RecetaMedica
-from inventarios.models import Inventario, MovimientoInventario, Producto
+from inventarios.models import Inventario, Producto
+from inventarios.services.stock_service import StockServiceError, descontar_stock
 
 from .models import DetalleVenta, Venta, Factura
 
@@ -193,15 +194,18 @@ def crear_venta_service(
 
     referencia = f"VENTA-{venta.id}"
     for detalle in detalles:
-        MovimientoInventario.objects.create(
-            producto=detalle.producto,
-            tipo_movimiento="salida",
-            cantidad=detalle.cantidad,
-            motivo="venta",
-            referencia=referencia,
-            usuario=vendedor,
-            observacion=f"Salida por venta #{venta.id}",
-        )
+        try:
+            descontar_stock(
+                producto=detalle.producto,
+                cantidad=detalle.cantidad,
+                motivo="venta",
+                referencia=referencia,
+                usuario=vendedor,
+                observacion=f"Salida por venta #{venta.id}",
+                lote=None,
+            )
+        except StockServiceError as exc:
+            raise VentaServiceError(str(exc), code="stock_insuficiente") from exc
 
     # ========== CREAR FACTURA ==========
     if datos_factura:
