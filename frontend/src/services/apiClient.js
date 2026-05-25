@@ -8,6 +8,7 @@ const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const ROOT_DOMAIN = import.meta.env.VITE_ROOT_DOMAIN || "localhost";
 const ACCESS_TOKEN_KEY = "auth_access_token";
 const REFRESH_TOKEN_KEY = "auth_refresh_token";
+let refreshInFlightPromise = null;
 
 function detectTenantSubdomain(hostname = window.location.hostname) {
   const host = (hostname || "").toLowerCase();
@@ -68,8 +69,12 @@ export async function request(endpoint, init = {}) {
   const headers = new Headers(init.headers || {});
   const token = getStoredAccessToken();
 
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    const currentAuth = headers.get("Authorization") || "";
+    // Always prefer the latest stored bearer token to avoid retrying with stale auth.
+    if (!currentAuth || /^Bearer\s+/i.test(currentAuth)) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
   }
 
   if (tenantSubdomain) {
@@ -96,26 +101,38 @@ async function safeParseJson(response) {
 }
 
 async function refreshAuthSession() {
+  if (refreshInFlightPromise) {
+    return refreshInFlightPromise;
+  }
+
   const refresh = getStoredRefreshToken();
-  const response = await request("/api/auth/refresh/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(refresh ? { refresh } : {}),
-  });
+  refreshInFlightPromise = (async () => {
+    const response = await request("/api/auth/refresh/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(refresh ? { refresh } : {}),
+    });
 
-  if (!response.ok) {
-    throw new Error("No se pudo refrescar la sesion.");
-  }
+    if (!response.ok) {
+      throw new Error("No se pudo refrescar la sesion.");
+    }
 
-  const data = await safeParseJson(response);
-  if (data?.access) {
-    setStoredAccessToken(data.access);
-  }
-  if (data?.refresh) {
-    localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
-  }
+    const data = await safeParseJson(response);
+    if (data?.access) {
+      setStoredAccessToken(data.access);
+    }
+    if (data?.refresh) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+    }
 
-  return data;
+    return data;
+  })();
+
+  try {
+    return await refreshInFlightPromise;
+  } finally {
+    refreshInFlightPromise = null;
+  }
 }
 
 export async function requestWithAuthRetry(endpoint, init = {}) {

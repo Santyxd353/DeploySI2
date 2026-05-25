@@ -135,6 +135,15 @@ export function EyeIcon({ className }) {
   );
 }
 
+export function PencilIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </BaseIcon>
+  );
+}
+
 export function EyeOffIcon({ className }) {
   return (
     <BaseIcon className={className}>
@@ -328,6 +337,45 @@ export function RestoreIcon({ className }) {
       <path d="M3 3v5h5" />
       <path d="M9 12h6" />
       <path d="M12 9v6" />
+    </BaseIcon>
+  );
+}
+
+
+// ... después de RestoreIcon ...
+
+export function DownloadIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </BaseIcon>
+  );
+}
+
+export function TrendingUp({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </BaseIcon>
+  );
+}
+
+export function TrendingDown({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
+      <polyline points="17 18 23 18 23 12" />
+    </BaseIcon>
+  );
+}
+
+export function Minus({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <line x1="5" y1="12" x2="19" y2="12" />
     </BaseIcon>
   );
 }

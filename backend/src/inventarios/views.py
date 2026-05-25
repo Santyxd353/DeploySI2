@@ -4,16 +4,26 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.shortcuts import get_object_or_404
-from django.db.models import F, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+from django.utils.dateparse import parse_date
+from django.utils import timezone
+from datetime import datetime, time, timedelta
 
 from core.rbac import tiene_permiso, ROLE_FARMACEUTICO
 from core.audit import log_system_event
+from inventarios.services.stock_service import (
+    StockServiceError,
+    ajustar_stock as stock_ajustar_stock,
+    aumentar_stock as stock_aumentar_stock,
+    descontar_stock as stock_descontar_stock,
+)
 from .models import (
     Categoria,
     Subcategoria,
     Laboratorio,
     Producto,
     Inventario,
+    LoteProducto,
     MovimientoInventario,
     EntradaStock,
 )
@@ -23,6 +33,7 @@ from .serializers import (
     LaboratorioSerializer,
     ProductoSerializer,
     InventarioSerializer,
+    LoteProductoSerializer,
     MovimientoInventarioSerializer,
     EntradaStockSerializer,
 )
@@ -194,6 +205,8 @@ class LaboratorioViewSet(viewsets.ModelViewSet):
 
 class ProductoPagination(PageNumberPagination):
     page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
 
 
 class ProductoViewSet(viewsets.ModelViewSet):
@@ -257,16 +270,84 @@ class ProductoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def resumen_stock(self, request):
         qs = Producto.objects.select_related("inventario").filter(estado=True)
-        agg = qs.aggregate(stock_total=Sum("inventario__stock_actual"))
+        today = timezone.localdate()
+        month_start = today.replace(day=1)
+        expiry_limit = today + timedelta(days=30)
+        valor_costo_expr = ExpressionWrapper(
+            F("inventario__stock_actual") * F("precio_compra"),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+        valor_venta_expr = ExpressionWrapper(
+            F("inventario__stock_actual") * F("precio_venta"),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+        agg = qs.aggregate(
+            stock_total=Sum("inventario__stock_actual"),
+            valor_total_costo=Sum(valor_costo_expr),
+            valor_total_venta=Sum(valor_venta_expr),
+        )
+        sin_stock = qs.filter(inventario__stock_actual__lte=0).count()
+        stock_bajo = qs.filter(
+            inventario__stock_actual__gt=0,
+            inventario__stock_actual__lte=F("stock_minimo"),
+        ).count()
+        disponible = qs.filter(inventario__stock_actual__gt=F("stock_minimo")).count()
+
+        lotes_activos = LoteProducto.objects.select_related("producto").filter(
+            producto__estado=True,
+            cantidad_disponible__gt=0,
+        )
+        lotes_proximos = lotes_activos.filter(
+            estado="disponible",
+            fecha_vencimiento__gte=today,
+            fecha_vencimiento__lte=expiry_limit,
+        )
+        lotes_vencidos = lotes_activos.filter(fecha_vencimiento__lt=today).exclude(estado__in=["retirado", "agotado"])
+        lotes_bloqueados = lotes_activos.filter(estado="bloqueado").count()
+
+        movimientos_mes = MovimientoInventario.objects.filter(fecha_movimiento__date__gte=month_start)
+        entradas_mes = movimientos_mes.filter(tipo_movimiento="entrada")
+        salidas_mes = movimientos_mes.filter(tipo_movimiento="salida")
+        ajustes_mes = movimientos_mes.filter(tipo_movimiento="ajuste")
+        mermas_mes = salidas_mes.filter(motivo__in=["merma", "devolucion_proveedor"])
+
+        weekly = []
+        week_start = today - timedelta(days=6)
+        for offset in range(7):
+            day = week_start + timedelta(days=offset)
+            day_qs = MovimientoInventario.objects.filter(fecha_movimiento__date=day)
+            entradas = day_qs.filter(tipo_movimiento="entrada").aggregate(total=Sum("cantidad"))["total"] or 0
+            salidas = day_qs.filter(tipo_movimiento="salida").aggregate(total=Sum("cantidad"))["total"] or 0
+            weekly.append({
+                "day": day.strftime("%a"),
+                "fecha": day.isoformat(),
+                "entrada": int(entradas),
+                "salida": int(salidas),
+            })
+
+        alertas_activas = stock_bajo + sin_stock + lotes_proximos.count() + lotes_vencidos.count() + lotes_bloqueados
         return Response({
             "total_productos": qs.count(),
-            "sin_stock": qs.filter(inventario__stock_actual__lte=0).count(),
-            "stock_bajo": qs.filter(
-                inventario__stock_actual__gt=0,
-                inventario__stock_actual__lte=F("stock_minimo"),
-            ).count(),
-            "disponible": qs.filter(inventario__stock_actual__gt=F("stock_minimo")).count(),
+            "sin_stock": sin_stock,
+            "stock_bajo": stock_bajo,
+            "disponible": disponible,
             "stock_total_unidades": int(agg["stock_total"] or 0),
+            "valor_total_costo": str(agg["valor_total_costo"] or "0.00"),
+            "valor_total_venta": str(agg["valor_total_venta"] or "0.00"),
+            "alertas_activas": alertas_activas,
+            "lotes_proximos_vencer": lotes_proximos.count(),
+            "productos_proximos_vencer": lotes_proximos.values("producto_id").distinct().count(),
+            "lotes_vencidos": lotes_vencidos.count(),
+            "lotes_bloqueados": lotes_bloqueados,
+            "movimientos_mes": movimientos_mes.count(),
+            "entradas_mes": entradas_mes.count(),
+            "salidas_mes": salidas_mes.count(),
+            "ajustes_mes": ajustes_mes.count(),
+            "mermas_mes": mermas_mes.count(),
+            "unidades_entradas_mes": int(entradas_mes.aggregate(total=Sum("cantidad"))["total"] or 0),
+            "unidades_salidas_mes": int(salidas_mes.aggregate(total=Sum("cantidad"))["total"] or 0),
+            "productos_controlados": qs.filter(es_controlado=True).count(),
+            "movimiento_semanal": weekly,
         })
 
     @action(detail=True, methods=["get"])
@@ -325,14 +406,19 @@ class ProductoViewSet(viewsets.ModelViewSet):
             return Response({"error": "Se requiere tipo_movimiento, cantidad y motivo"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            movimiento = MovimientoInventario.objects.create(
-                producto=producto,
-                tipo_movimiento=tipo_movimiento,
-                cantidad=int(cantidad),
-                motivo=motivo,
-                observacion=observacion,
-                usuario=request.user,
-            )
+            if tipo_movimiento == "ajuste":
+                inventario, movimiento, _, _ = stock_ajustar_stock(
+                    producto=producto,
+                    nuevo_stock=int(cantidad),
+                    motivo=motivo,
+                    usuario=request.user,
+                    observacion=observacion,
+                )
+            else:
+                return Response(
+                    {"error": "En este endpoint solo se permite tipo_movimiento='ajuste'."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             log_system_event(
                 request=request,
@@ -344,7 +430,6 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 entidad_id=str(producto.id),
             )
 
-            inventario = Inventario.objects.get(producto=producto)
             return Response(
                 {
                     "message": "Stock ajustado correctamente",
@@ -353,7 +438,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_200_OK,
             )
-        except ValueError as e:
+        except StockServiceError as e:
             log_system_event(
                 request=request,
                 accion="AJUSTE_STOCK",
@@ -395,6 +480,86 @@ class ProductoViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class LoteProductoViewSet(viewsets.ModelViewSet):
+    queryset = LoteProducto.objects.all()
+    serializer_class = LoteProductoSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["numero_lote", "producto__sku", "producto__nombre_comercial", "proveedor"]
+    ordering_fields = ["fecha_ingreso", "numero_lote", "fecha_vencimiento", "created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related("producto")
+        producto_id = self.request.query_params.get("producto") or self.request.query_params.get("producto_id")
+        if producto_id:
+            queryset = queryset.filter(producto_id=producto_id)
+        estado = self.request.query_params.get("estado")
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        return queryset.order_by("-fecha_ingreso")
+
+    @action(detail=False, methods=["get"], url_path="proximos-vencer")
+    def proximos_vencer(self, request):
+        try:
+            dias = int(request.query_params.get("dias", 30))
+        except (TypeError, ValueError):
+            dias = 30
+        dias = max(1, min(dias, 365))
+        hoy = timezone.localdate()
+        limite = hoy + timedelta(days=dias)
+        lotes = self.get_queryset().filter(
+            estado="disponible",
+            cantidad_disponible__gt=0,
+            fecha_vencimiento__gte=hoy,
+            fecha_vencimiento__lte=limite,
+        ).order_by("fecha_vencimiento", "producto__nombre_comercial")
+        return Response(self.get_serializer(lotes, many=True).data)
+
+    @action(detail=False, methods=["get"])
+    def vencidos(self, request):
+        hoy = timezone.localdate()
+        lotes = (
+            self.get_queryset()
+            .filter(cantidad_disponible__gt=0, fecha_vencimiento__lt=hoy)
+            .exclude(estado__in=["agotado", "retirado"])
+            .order_by("fecha_vencimiento", "producto__nombre_comercial")
+        )
+        return Response(self.get_serializer(lotes, many=True).data)
+
+    @action(detail=True, methods=["patch"])
+    def bloquear(self, request, pk=None):
+        lote = self.get_object()
+        if lote.estado in {"retirado", "vencido"}:
+            return Response({"detail": "El lote ya no está disponible para bloqueo."}, status=status.HTTP_400_BAD_REQUEST)
+        lote.estado = "bloqueado"
+        lote.save(update_fields=["estado", "updated_at"])
+        return Response(self.get_serializer(lote).data)
+
+    @action(detail=True, methods=["post"])
+    def anular(self, request, pk=None):
+        lote = self.get_object()
+        motivo_anulacion = request.data.get("motivo_anulacion", "alerta_fabricante")
+        observacion = request.data.get("observacion", "")
+        cantidad_a_descontar = int(lote.cantidad_disponible or 0)
+
+        if cantidad_a_descontar > 0:
+            motivo_mov = "merma" if motivo_anulacion == "vencimiento" else "devolucion_proveedor"
+            stock_descontar_stock(
+                producto=lote.producto,
+                cantidad=cantidad_a_descontar,
+                motivo=motivo_mov,
+                referencia=f"ANUL-LOTE-{lote.id}",
+                usuario=request.user,
+                observacion=observacion or f"Anulación de lote {lote.numero_lote}",
+                lote=lote,
+            )
+
+        lote.cantidad_disponible = 0
+        lote.estado = "vencido" if motivo_anulacion == "vencimiento" else "retirado"
+        lote.save(update_fields=["cantidad_disponible", "estado", "updated_at"])
+        return Response(self.get_serializer(lote).data)
+
+
 class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = MovimientoInventario.objects.all()
     serializer_class = MovimientoInventarioSerializer
@@ -406,13 +571,31 @@ class MovimientoInventarioViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset().select_related("producto", "usuario")
 
-        producto_id = self.request.query_params.get("producto")
+        producto_id = self.request.query_params.get("producto") or self.request.query_params.get("producto_id")
         if producto_id:
             queryset = queryset.filter(producto_id=producto_id)
 
         tipo = self.request.query_params.get("tipo_movimiento")
         if tipo:
             queryset = queryset.filter(tipo_movimiento=tipo)
+
+        fecha_desde = self.request.query_params.get("fecha_desde")
+        if fecha_desde:
+            parsed_from = parse_date(fecha_desde)
+            if parsed_from:
+                dt_from = datetime.combine(parsed_from, time.min)
+                if timezone.is_naive(dt_from):
+                    dt_from = timezone.make_aware(dt_from)
+                queryset = queryset.filter(fecha_movimiento__gte=dt_from)
+
+        fecha_hasta = self.request.query_params.get("fecha_hasta")
+        if fecha_hasta:
+            parsed_to = parse_date(fecha_hasta)
+            if parsed_to:
+                dt_to = datetime.combine(parsed_to, time.max)
+                if timezone.is_naive(dt_to):
+                    dt_to = timezone.make_aware(dt_to)
+                queryset = queryset.filter(fecha_movimiento__lte=dt_to)
 
         return queryset
 
@@ -423,7 +606,30 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return super().get_queryset().select_related("producto", "usuario").order_by("-created_at")
+        return super().get_queryset().select_related("producto", "usuario", "lote").order_by("-created_at")
+
+    def _confirmar_entrada(self, entrada, usuario):
+        if entrada.estado == "confirmada":
+            return
+        if entrada.estado == "anulada":
+            raise StockServiceError("No se puede confirmar una entrada anulada.")
+
+        stock_aumentar_stock(
+            producto=entrada.producto,
+            cantidad=entrada.cantidad,
+            motivo=entrada.motivo,
+            referencia=entrada.referencia or "",
+            usuario=usuario,
+            observacion=entrada.descripcion or "",
+            lote=entrada.lote,
+        )
+
+        if entrada.lote:
+            entrada.lote.cantidad_disponible = F("cantidad_disponible") + entrada.cantidad
+            entrada.lote.save(update_fields=["cantidad_disponible", "updated_at"])
+
+        entrada.estado = "confirmada"
+        entrada.save(update_fields=["estado", "updated_at"])
 
     def perform_create(self, serializer):
         instance = serializer.save(usuario=self.request.user)
@@ -438,7 +644,10 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        estado_anterior = serializer.instance.estado
         instance = serializer.save()
+        if estado_anterior != "confirmada" and instance.estado == "confirmada":
+            self._confirmar_entrada(instance, self.request.user)
         log_system_event(
             request=self.request,
             accion="UPDATE",
@@ -501,3 +710,4 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         entradas = self.get_queryset()[:10]
         serializer = self.get_serializer(entradas, many=True)
         return Response(serializer.data)
+

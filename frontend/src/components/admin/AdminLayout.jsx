@@ -95,7 +95,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   const isUsersSectionActive = userManagementSections.some((section) => section.id === resolvedActiveSection);
   const inventoryView = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("view") || "entradas";
+    return params.get("view") || "dashboard";
   }, [location.search]);
   const isInventorySectionActive = resolvedActiveSection === inventorySectionId;
 
@@ -282,6 +282,17 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
 
                 {showInventorySection ? (
                   <div className="space-y-1 pl-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/admin/inventarios?view=dashboard")}
+                      className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                        isInventorySectionActive && inventoryView === "dashboard"
+                          ? "border-teal-600 bg-teal-50 text-teal-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="truncate">Dashboard</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => navigate("/admin/inventarios?view=entradas")}

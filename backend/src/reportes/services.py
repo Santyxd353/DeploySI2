@@ -1513,7 +1513,7 @@ def _gemini_generate_content(parts, schema=None, model=None):
     if not api_key:
         raise ReporteError("Gemini no esta configurado. Falta GEMINI_API_KEY.", code="ia_no_configurada")
 
-    model_name = model or settings.GEMINI_REPORTS_MODEL
+    model_name = _normalize_gemini_model_name(model or settings.GEMINI_REPORTS_MODEL)
     payload = {
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {"temperature": 0.1},
@@ -1522,16 +1522,75 @@ def _gemini_generate_content(parts, schema=None, model=None):
         payload["generationConfig"]["responseMimeType"] = "application/json"
         payload["generationConfig"]["responseJsonSchema"] = schema
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    response = requests.post(url, params={"key": api_key}, json=payload, timeout=45)
-    if response.status_code >= 400:
-        raise ReporteError(f"Gemini rechazo la solicitud ({response.status_code}).", code="ia_error")
-    data = response.json()
+    last_response = None
+    attempted_models = []
+    for candidate_model in _gemini_candidate_models(model_name):
+        attempted_models.append(candidate_model)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent"
+        try:
+            response = requests.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=45)
+        except requests.Timeout as exc:
+            raise ReporteError("Gemini tardo demasiado en responder. Intenta nuevamente.", code="ia_timeout") from exc
+        except requests.RequestException as exc:
+            raise ReporteError("No se pudo conectar con Gemini. Revisa tu conexion o la configuracion de red.", code="ia_error") from exc
+
+        if response.status_code < 400:
+            data = response.json()
+            try:
+                response_parts = data["candidates"][0]["content"]["parts"]
+            except (KeyError, IndexError) as exc:
+                raise ReporteError("Gemini no devolvio una respuesta valida.", code="ia_error") from exc
+            return "".join(part.get("text", "") for part in response_parts)
+
+        last_response = response
+        if response.status_code not in (400, 404):
+            break
+
+    if last_response is not None:
+        raise ReporteError(_gemini_error_message(last_response, attempted_models[-1], attempted_models), code="ia_error")
+    raise ReporteError("Gemini no devolvio una respuesta valida.", code="ia_error")
+
+
+def _normalize_gemini_model_name(model_name):
+    value = str(model_name or "").strip()
+    if value.startswith("models/"):
+        value = value.split("/", 1)[1]
+    return value
+
+
+def _gemini_candidate_models(primary_model):
+    configured_fallbacks = getattr(settings, "GEMINI_FALLBACK_MODELS", "")
+    raw_candidates = [primary_model]
+    raw_candidates.extend(item.strip() for item in str(configured_fallbacks).split(",") if item.strip())
+    raw_candidates.extend(["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"])
+
+    seen = set()
+    candidates = []
+    for item in raw_candidates:
+        model_name = _normalize_gemini_model_name(item)
+        if model_name and model_name not in seen:
+            seen.add(model_name)
+            candidates.append(model_name)
+    return candidates
+
+
+def _gemini_error_message(response, model_name, attempted_models=None):
+    detail = ""
     try:
-        parts = data["candidates"][0]["content"]["parts"]
-    except (KeyError, IndexError) as exc:
-        raise ReporteError("Gemini no devolvio una respuesta valida.", code="ia_error") from exc
-    return "".join(part.get("text", "") for part in parts)
+        detail = response.json().get("error", {}).get("message", "")
+    except ValueError:
+        detail = response.text[:180] if response.text else ""
+
+    if response.status_code in (400, 404):
+        attempted = ", ".join(attempted_models or [model_name])
+        return f"Modelo Gemini no disponible o solicitud invalida. Modelos probados: {attempted}. Revisa GEMINI_REPORTS_MODEL y GEMINI_AUDIO_MODEL."
+    if response.status_code in (401, 403):
+        return "Gemini rechazo la clave API. Revisa que GEMINI_API_KEY sea valida y tenga acceso a Generative Language API."
+    if response.status_code == 429:
+        return "Gemini alcanzo el limite de cuota o velocidad. Intenta mas tarde o revisa la cuota de la API."
+    if detail:
+        return f"Gemini rechazo la solicitud ({response.status_code}): {detail}"
+    return f"Gemini rechazo la solicitud ({response.status_code})."
 
 
 def _interpretation_schema():
