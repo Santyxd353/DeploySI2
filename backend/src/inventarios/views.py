@@ -265,6 +265,15 @@ class ProductoViewSet(viewsets.ModelViewSet):
         elif stock_estado == "disponible":
             queryset = queryset.filter(inventario__stock_actual__gt=F("stock_minimo"))
 
+        # Filtro específico para catálogo WEB:
+        # oculta productos que tengan lotes comercialmente no vendibles.
+        visible_web = self.request.query_params.get("visible_web")
+        if visible_web is not None and visible_web.lower() == "true":
+            queryset = queryset.exclude(
+                lotes__estado__in=["bloqueado", "vencido"],
+                lotes__cantidad_disponible__gt=0,
+            ).distinct()
+
         return queryset
 
     @action(detail=False, methods=["get"])
@@ -712,4 +721,3 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         entradas = self.get_queryset()[:10]
         serializer = self.get_serializer(entradas, many=True)
         return Response(serializer.data)
-

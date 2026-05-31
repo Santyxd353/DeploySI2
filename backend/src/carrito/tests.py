@@ -75,3 +75,54 @@ class CarritoApiFlowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["items"]), 1)
         self.assertEqual(response.data["items"][0]["cantidad"], 2)
+
+    def test_no_permite_agregar_por_encima_del_stock(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/carrito/agregar/",
+            {"producto_id": self.producto.id, "cantidad": 25},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Stock insuficiente", response.data.get("detail", ""))
+
+    def test_no_permite_actualizar_item_por_encima_del_stock(self):
+        self.client.force_authenticate(user=self.user)
+        add_response = self.client.post(
+            "/api/carrito/agregar/",
+            {"producto_id": self.producto.id, "cantidad": 1},
+            format="json",
+        )
+        item_id = add_response.data["items"][0]["id"]
+        response = self.client.patch(
+            f"/api/carrito/items/{item_id}/",
+            {"cantidad": 30},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Stock insuficiente", response.data.get("detail", ""))
+
+    def test_permite_disminuir_item_si_stock_bajo_por_venta_externa(self):
+        self.client.force_authenticate(user=self.user)
+        add_response = self.client.post(
+            "/api/carrito/agregar/",
+            {"producto_id": self.producto.id, "cantidad": 6},
+            format="json",
+        )
+        self.assertEqual(add_response.status_code, status.HTTP_200_OK)
+        item_id = add_response.data["items"][0]["id"]
+
+        # Simula una venta externa (POS) que reduce stock actual debajo de la cantidad en carrito.
+        inv = Inventario.objects.get(producto=self.producto)
+        inv.stock_actual = 4
+        inv.save(update_fields=["stock_actual", "updated_at"])
+
+        # Debe permitir reducir (6 -> 5), aunque 5 siga por encima del stock actual,
+        # para que el usuario pueda ajustar su carrito hacia abajo.
+        response = self.client.patch(
+            f"/api/carrito/items/{item_id}/",
+            {"cantidad": 5},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["items"][0]["cantidad"], 5)
