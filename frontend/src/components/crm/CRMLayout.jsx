@@ -82,6 +82,14 @@ const CRM_SECTIONS = [
     path: null,
     available: false,
   },
+  {
+    id: "puntos",
+    label: "Puntos",
+    description: "Fidelidad y canjes",
+    icon: SparkIcon,
+    path: "/admin/puntos",
+    available: true,
+  },
 ];
 
 export default function CRMLayout({ activeSection = "clientes", children }) {

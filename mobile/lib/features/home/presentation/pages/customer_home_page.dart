@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../cart/customer_cart_tab.dart';
 import '../../../catalog/customer_catalog_tab.dart';
 import '../../../payments/my_payments_page.dart';
+import '../../../points/presentation/pages/customer_points_page.dart';
+import '../../../points/data/customer_points_service.dart';
+import '../../../points/data/models/customer_points_models.dart';
 import '../../../treatments/presentation/pages/treatments_catalog_page.dart';
 import '../../../../core/auth/auth_session_manager.dart';
 import '../../../auth/data/models/auth_user.dart';
@@ -59,6 +62,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
 
     final pages = [
       _HomeOverviewTab(
+        onOpenPoints: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CustomerPointsPage()),
+          );
+        },
         onOpenPayments: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const MyPaymentsPage()),
@@ -323,10 +331,59 @@ class _ProfileTabState extends State<_ProfileTab> {
   }
 }
 
-class _HomeOverviewTab extends StatelessWidget {
-  const _HomeOverviewTab({required this.onOpenPayments});
+class _HomeOverviewTab extends StatefulWidget {
+  const _HomeOverviewTab({
+    required this.onOpenPayments,
+    required this.onOpenPoints,
+  });
 
   final VoidCallback onOpenPayments;
+  final VoidCallback onOpenPoints;
+
+  @override
+  State<_HomeOverviewTab> createState() => _HomeOverviewTabState();
+}
+
+class _HomeOverviewTabState extends State<_HomeOverviewTab> {
+  final CustomerPointsService _pointsService = CustomerPointsService();
+
+  bool _loadingPoints = true;
+  String? _pointsError;
+  CustomerPointsDashboard? _dashboard;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPointsSummary();
+  }
+
+  Future<void> _loadPointsSummary() async {
+    try {
+      final token = await AuthSessionManager.getAccessToken();
+      if (token == null || token.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _loadingPoints = false;
+          _pointsError = null;
+        });
+        return;
+      }
+
+      final dashboard = await _pointsService.loadDashboard(accessToken: token);
+      if (!mounted) return;
+      setState(() {
+        _dashboard = dashboard;
+        _loadingPoints = false;
+        _pointsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingPoints = false;
+        _pointsError = e.toString();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -411,6 +468,10 @@ class _HomeOverviewTab extends StatelessWidget {
 
         const SizedBox(height: 32),
 
+        _buildPointsSummaryCard(context),
+
+        const SizedBox(height: 24),
+
         Text(
           'Accesos rápidos',
           style: GoogleFonts.manrope(
@@ -421,12 +482,11 @@ class _HomeOverviewTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // GRID DE TARJETAS (ESTILO DASHBOARD MODERN)
         Row(
           children: [
             Expanded(
               child: _QuickActionCard(
-                icon: Icons.medication_rounded,
+                icon: Icons.medical_services_rounded,
                 label: 'Catálogo',
                 toneColor: const Color(0xFF006A5E),
                 backgroundTint: const Color(0xFFEAF8F4),
@@ -452,6 +512,7 @@ class _HomeOverviewTab extends StatelessWidget {
                 label: 'Mis Puntos',
                 toneColor: const Color(0xFFB76E00),
                 backgroundTint: const Color(0xFFFFF3E0),
+                onTap: widget.onOpenPoints,
               ),
             ),
             const SizedBox(width: 16),
@@ -461,7 +522,7 @@ class _HomeOverviewTab extends StatelessWidget {
                 label: 'Mis Pagos',
                 toneColor: const Color(0xFF6A1B9A),
                 backgroundTint: const Color(0xFFF6ECFF),
-                onTap: onOpenPayments,
+                onTap: widget.onOpenPayments,
               ),
             ),
           ],
@@ -487,6 +548,214 @@ class _HomeOverviewTab extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildPointsSummaryCard(BuildContext context) {
+    if (_loadingPoints) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE0E3E1)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFFB76E00),
+              ),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Cargando tu resumen de puntos...',
+                style: TextStyle(color: Color(0xFF5A6562), fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final dashboard = _dashboard;
+    if (dashboard == null) {
+      return const SizedBox.shrink();
+    }
+
+    final available = dashboard.account.availablePoints;
+    final minRedeem = dashboard.configuration.minimumRedeemPoints;
+    final pointsToRedeem = available >= minRedeem ? 0 : minRedeem - available;
+    final canRedeem = available >= minRedeem;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE0E3E1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.stars_rounded,
+                  color: Color(0xFFB76E00),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tus puntos',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: const Color(0xFF191C1C),
+                      ),
+                    ),
+                    Text(
+                      canRedeem
+                          ? 'Ya puedes canjear recompensas del catálogo'
+                          : 'Te faltan $pointsToRedeem puntos para el primer canje',
+                      style: GoogleFonts.manrope(
+                        color: const Color(0xFF6F7977),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$available',
+                style: GoogleFonts.manrope(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 28,
+                  color: const Color(0xFFB76E00),
+                ),
+              ),
+            ],
+          ),
+          if (_pointsError != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'No pudimos cargar todos los detalles, pero puedes abrir el módulo de puntos igual.',
+              style: GoogleFonts.manrope(
+                color: const Color(0xFF6F7977),
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Ganados',
+                  value: '${dashboard.account.accumulatedPoints}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Canjeados',
+                  value: '${dashboard.account.redeemedPoints}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Nivel',
+                  value: dashboard.account.level.toUpperCase(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: widget.onOpenPoints,
+              icon: const Icon(Icons.arrow_forward_rounded),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFE4E7E5)),
+                foregroundColor: const Color(0xFF006A5E),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              label: Text(
+                'Abrir mis puntos',
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniPointsStat extends StatelessWidget {
+  const _MiniPointsStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAF9),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.manrope(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: const Color(0xFF191C1C),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: GoogleFonts.manrope(
+              color: const Color(0xFF6F7977),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
