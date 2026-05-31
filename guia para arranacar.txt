@@ -174,7 +174,7 @@ Luego prueba el frontend:
 
 16. Flujo recomendado de prueba
 - Entra con el superusuario global para revisar el panel SaaS.
-- Entra a `farmacia1.localhost:5173` con `admin@farmacia1.local` y la clave `Farmacia1*2026`.
+- Entra a `farmacia1.localhost:5173` con `admin@farmacia1.local` y la clave `   `.
 - Entra a `farmacia2.localhost:5173` con `admin@farmacia2.local` y la clave `Farmacia2*2026`.
 - Verifica inventario, carrito, venta y factura en cada tenant.
 

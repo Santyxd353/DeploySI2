@@ -58,6 +58,8 @@ TENANT_APPS = [
     "carrito",
     "predicciones",
     "reportes",
+    "opiniones",
+    "publicidad",
     "puntos.apps.PuntosConfig",
 ]
 

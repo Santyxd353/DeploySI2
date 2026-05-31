@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CloseIcon, ClipboardListIcon, SparkIcon, UserIcon } from "../ui/Icons";
+import { CloseIcon, ClipboardListIcon, SparkIcon, UserIcon, CartIcon } from "../ui/Icons";
 import { useAuth } from "../../context/AuthContext";
 import RecetasListPanel from "./RecetasListPanel";
 import RecetaMedicaFormModal from "./RecetaMedicaFormModal";
+import HistorialComprasPanel from "./HistorialComprasPanel";
 import { puntosService } from "../../services/puntosService";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -254,6 +255,7 @@ function TabPuntos({ cliente }) {
 const TABS = [
   { id: "info", label: "Información", Icon: UserIcon },
   { id: "historial", label: "Historial Médico", Icon: ClipboardListIcon },
+  { id: "compras", label: "Historial de Compras", Icon: CartIcon },
   { id: "puntos", label: "Puntos", Icon: SparkIcon },
 ];
 
@@ -328,6 +330,8 @@ export default function ClienteDetallePanel({ cliente, onClose }) {
             <TabInformacion cliente={cliente} />
           ) : activeTab === "historial" ? (
             <TabHistorialMedico cliente={cliente} />
+          ) : activeTab === "compras" ? (
+            <HistorialComprasPanel clienteId={cliente.id} />
           ) : (
             <TabPuntos cliente={cliente} />
           )}

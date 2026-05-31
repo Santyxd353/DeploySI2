@@ -16,5 +16,8 @@ if [ "$RUN_MIGRATIONS" != "false" ]; then
 fi
 
 mkdir -p /app/backups
+mkdir -p /app/media/recetas
+mkdir -p /app/media/firmas_medicos
+mkdir -p /app/media/firmas_recetas
 
 exec "$@"

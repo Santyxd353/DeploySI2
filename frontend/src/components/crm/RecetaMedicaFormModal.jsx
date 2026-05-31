@@ -12,6 +12,7 @@ const initialForm = {
   codigo: "",
   fecha_emision: today(),
   fecha_vencimiento: "",
+  fecha_validez: "",
   observacion: "",
   medico_nombre: "",
   medico_licencia: "",
@@ -161,6 +162,8 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
   const [archivo, setArchivo] = useState(null);
   const [firmaFile, setFirmaFile] = useState(null);
   const [clearFirma, setClearFirma] = useState(false);
+  const [firmaDigitalFile, setFirmaDigitalFile] = useState(null);
+  const [clearFirmaDigital, setClearFirmaDigital] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [globalError, setGlobalError] = useState("");
@@ -172,6 +175,7 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
         codigo: receta.codigo ?? "",
         fecha_emision: receta.fecha_emision ?? today(),
         fecha_vencimiento: receta.fecha_vencimiento ?? "",
+        fecha_validez: receta.fecha_validez ?? "",
         observacion: receta.observacion ?? "",
         medico_nombre: receta.medico?.nombre ?? "",
         medico_licencia: receta.medico?.licencia ?? "",
@@ -185,6 +189,8 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
     setArchivo(null);
     setFirmaFile(null);
     setClearFirma(false);
+    setFirmaDigitalFile(null);
+    setClearFirmaDigital(false);
     setFieldErrors({});
     setGlobalError("");
   }, [receta, clienteId]);
@@ -211,6 +217,8 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
     if (!resolvedClienteId) errors.cliente = "Debes seleccionar un cliente.";
     if (!form.codigo.trim()) errors.codigo = "El código es obligatorio.";
     if (!form.fecha_emision) errors.fecha_emision = "La fecha de emisión es obligatoria.";
+    if (form.fecha_validez && form.fecha_validez < today())
+      errors.fecha_validez = "La fecha de validez debe ser hoy o una fecha futura.";
     if (!isEditing) {
       const fileErr = validateFile(archivo);
       if (!archivo) errors.archivo = "El archivo es obligatorio.";
@@ -227,8 +235,10 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
     fd.append("codigo", form.codigo.trim());
     fd.append("fecha_emision", form.fecha_emision);
     if (form.fecha_vencimiento) fd.append("fecha_vencimiento", form.fecha_vencimiento);
+    if (form.fecha_validez) fd.append("fecha_validez", form.fecha_validez);
     if (form.observacion.trim()) fd.append("observacion", form.observacion.trim());
     if (archivo) fd.append("archivo", archivo);
+    if (firmaDigitalFile) fd.append("firma_digital", firmaDigitalFile);
 
     // Medico fields
     if (form.medico_nombre.trim()) {
@@ -327,17 +337,30 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
               </label>
             </div>
 
-            {/* Fecha vencimiento */}
-            <label className="block space-y-1">
-              <span className="text-xs font-bold text-slate-500">Fecha de vencimiento</span>
-              <input
-                type="date"
-                value={form.fecha_vencimiento}
-                min={form.fecha_emision}
-                onChange={(e) => set("fecha_vencimiento", e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
-              />
-            </label>
+            {/* Fecha vencimiento + Fecha validez */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-1">
+                <span className="text-xs font-bold text-slate-500">Fecha de vencimiento</span>
+                <input
+                  type="date"
+                  value={form.fecha_vencimiento}
+                  min={form.fecha_emision}
+                  onChange={(e) => set("fecha_vencimiento", e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-bold text-slate-500">Fecha de validez</span>
+                <input
+                  type="date"
+                  value={form.fecha_validez}
+                  min={today()}
+                  onChange={(e) => set("fecha_validez", e.target.value)}
+                  className={`w-full rounded-xl border px-3 py-2 text-sm outline-none focus:border-indigo-400 ${fieldErrors.fecha_validez ? "border-rose-400" : "border-slate-200"}`}
+                />
+                {fieldErrors.fecha_validez ? <p className="text-xs text-rose-600">{fieldErrors.fecha_validez}</p> : null}
+              </label>
+            </div>
 
             {/* Archivo receta */}
             <div className="space-y-1">
@@ -352,6 +375,30 @@ export default function RecetaMedicaFormModal({ clienteId, clienteNombre, receta
                 label="Arrastra o haz clic para subir"
                 hint="PDF, JPG, PNG"
               />
+            </div>
+
+            {/* Firma digital de la receta */}
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-500">Firma digital del médico en receta</span>
+              {!clearFirmaDigital && (firmaDigitalFile || receta?.firma_digital_url) ? (
+                <ImagePreview
+                  file={firmaDigitalFile}
+                  existingUrl={!firmaDigitalFile ? receta?.firma_digital_url : null}
+                  onClear={() => { setFirmaDigitalFile(null); setClearFirmaDigital(true); }}
+                />
+              ) : (
+                <FileDropZone
+                  file={firmaDigitalFile}
+                  onChange={(f) => { setFirmaDigitalFile(f); setClearFirmaDigital(false); }}
+                  error={fieldErrors.firma_digital}
+                  accept={ACCEPTED_FIRMA}
+                  label="Arrastra o haz clic para subir firma digital"
+                  hint="JPG, PNG"
+                />
+              )}
+              {fieldErrors.firma_digital ? (
+                <p className="text-xs text-rose-600">{fieldErrors.firma_digital}</p>
+              ) : null}
             </div>
 
             {/* Observaciones */}

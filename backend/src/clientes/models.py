@@ -62,8 +62,10 @@ class RecetaMedica(TenantAwareModel):
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="recetas")
     codigo = models.CharField(max_length=50)
     archivo = models.FileField(upload_to="recetas/", null=True, blank=True)
+    firma_digital = models.ImageField(upload_to="firmas_recetas/", null=True, blank=True)
     fecha_emision = models.DateField(default=timezone.localdate)
     fecha_vencimiento = models.DateField(null=True, blank=True)
+    fecha_validez = models.DateField(null=True, blank=True)
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="pendiente")
     observacion = models.TextField(blank=True)
     validada_por = models.ForeignKey(

@@ -151,3 +151,28 @@ export async function confirmarEntradaStock(entradaId) {
     body: JSON.stringify({ estado: 'confirmada' }),
   });
 }
+
+const jsonBody = (data) => ({
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+});
+
+export const limitesDispensacionService = {
+  listar: () => requestJsonWithAuthRetry('/api/inventarios/limites-dispensacion/'),
+  porProducto: (productoId) =>
+    requestJsonWithAuthRetry(`/api/inventarios/limites-dispensacion/por-producto/${productoId}/`),
+  crear: (data) =>
+    requestJsonWithAuthRetry('/api/inventarios/limites-dispensacion/', {
+      method: 'POST',
+      ...jsonBody(data),
+    }),
+  actualizar: (id, data) =>
+    requestJsonWithAuthRetry(`/api/inventarios/limites-dispensacion/${id}/`, {
+      method: 'PATCH',
+      ...jsonBody(data),
+    }),
+  eliminar: (id) =>
+    requestJsonWithAuthRetry(`/api/inventarios/limites-dispensacion/${id}/`, {
+      method: 'DELETE',
+    }),
+};

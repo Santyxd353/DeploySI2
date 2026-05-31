@@ -22,6 +22,7 @@ class MedicoRecetaSerializer(serializers.ModelSerializer):
 
 class RecetaMedicaSerializer(serializers.ModelSerializer):
     archivo_url = serializers.SerializerMethodField()
+    firma_digital_url = serializers.SerializerMethodField()
     dias_para_vencer = serializers.SerializerMethodField()
     medico = MedicoRecetaSerializer(read_only=True)
 
@@ -39,8 +40,11 @@ class RecetaMedicaSerializer(serializers.ModelSerializer):
             "codigo",
             "archivo",
             "archivo_url",
+            "firma_digital",
+            "firma_digital_url",
             "fecha_emision",
             "fecha_vencimiento",
+            "fecha_validez",
             "dias_para_vencer",
             "estado",
             "observacion",
@@ -55,11 +59,14 @@ class RecetaMedicaSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = [
-            "id", "archivo_url", "dias_para_vencer",
+            "id", "archivo_url", "firma_digital_url", "dias_para_vencer",
             "validada_por", "validada_en", "medico",
             "created_at", "updated_at",
         ]
-        extra_kwargs = {"archivo": {"write_only": True, "required": False}}
+        extra_kwargs = {
+            "archivo": {"write_only": True, "required": False},
+            "firma_digital": {"write_only": True, "required": False},
+        }
 
     def get_dias_para_vencer(self, obj):
         if not obj.fecha_vencimiento:
@@ -73,6 +80,30 @@ class RecetaMedicaSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.archivo.url)
         return obj.archivo.url
+
+    def get_firma_digital_url(self, obj):
+        if not obj.firma_digital:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.firma_digital.url)
+        return obj.firma_digital.url
+
+    def validate_firma_digital(self, value):
+        if not value:
+            return value
+        allowed = {"jpg", "jpeg", "png"}
+        ext = value.name.rsplit(".", 1)[-1].lower()
+        if ext not in allowed:
+            raise serializers.ValidationError("La firma digital debe ser JPG o PNG.")
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("La firma digital no puede superar los 5 MB.")
+        return value
+
+    def validate_fecha_validez(self, value):
+        if value and value < timezone.now().date():
+            raise serializers.ValidationError("La fecha de validez debe ser hoy o una fecha futura.")
+        return value
 
     def validate_medico_firma_imagen(self, value):
         if not value:

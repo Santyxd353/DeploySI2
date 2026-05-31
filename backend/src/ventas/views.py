@@ -3,6 +3,7 @@
 import stripe
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, Max, Min, Sum
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
@@ -16,7 +17,9 @@ from carrito.models import Carrito
 
 from .serializers import POSVentaInputSerializer, VentaCreateInputSerializer, VentaSerializer
 from .services import VentaServiceError, crear_venta_service, crear_payment_intent, verificar_payment_intent
-from .models import Factura, Venta
+from .models import DetalleVenta, Factura, Venta
+
+_ESTADOS_COMPLETADOS = ["pagada", "entregada"]
 
 
 def _to_decimal_2(value, *, field_name):
@@ -586,3 +589,154 @@ def stripe_webhook(request):
         usuario=usuario,
     )
     return Response({'ok': True, 'venta_id': venta.id, 'created': created}, status=status.HTTP_200_OK)
+
+
+# ========== HU-18: HISTORIAL DE VENTAS ==========
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def listar_historial_ventas(request):
+    """
+    GET /api/ventas/historial/
+    Query params:
+      - cliente_id  (solo admin/farmacéutico/cajero)
+      - page        (default 1)
+      - page_size   (default 10, max 50)
+      - estado      (pendiente|pagada|preparando|entregada|cancelada)
+      - fecha_desde (YYYY-MM-DD)
+      - fecha_hasta (YYYY-MM-DD)
+
+    RBAC:
+      - ventas.ver → puede filtrar por cualquier cliente_id
+      - ROLE_CLIENTE → solo sus propias ventas (ignora cliente_id)
+    """
+    from core.rbac import tiene_permiso
+
+    tenant = getattr(request, "tenant", None)
+    can_see_all = tiene_permiso(request.user, "ventas.ver", tenant=tenant)
+
+    if can_see_all:
+        cliente_id = request.query_params.get("cliente_id")
+        ventas_qs = Venta.objects.filter(cliente_id=cliente_id) if cliente_id else Venta.objects.all()
+    else:
+        cliente = Cliente.objects.filter(usuario=request.user, estado=True).first()
+        if not cliente:
+            return Response({
+                "count": 0, "page": 1, "page_size": 10,
+                "next": None, "previous": None, "results": [],
+                "resumen": {
+                    "total_gastado": 0, "num_compras": 0,
+                    "promedio_por_compra": 0, "ultima_compra": None,
+                },
+                "productos_frecuentes": [],
+            })
+        ventas_qs = Venta.objects.filter(cliente=cliente)
+
+    # Filtros opcionales
+    estado = request.query_params.get("estado")
+    if estado:
+        ventas_qs = ventas_qs.filter(estado=estado)
+
+    fecha_desde = request.query_params.get("fecha_desde")
+    if fecha_desde:
+        ventas_qs = ventas_qs.filter(created_at__date__gte=fecha_desde)
+
+    fecha_hasta = request.query_params.get("fecha_hasta")
+    if fecha_hasta:
+        ventas_qs = ventas_qs.filter(created_at__date__lte=fecha_hasta)
+
+    # Resumen de ventas completadas (sobre el queryset filtrado, antes de paginar)
+    agg = ventas_qs.filter(estado__in=_ESTADOS_COMPLETADOS).aggregate(
+        total_gastado=Sum("total"),
+        num_compras=Count("id"),
+        ultima_compra=Max("created_at"),
+    )
+    total_gastado = float(agg["total_gastado"] or 0)
+    num_compras = agg["num_compras"] or 0
+    resumen = {
+        "total_gastado": total_gastado,
+        "num_compras": num_compras,
+        "promedio_por_compra": round(total_gastado / num_compras, 2) if num_compras > 0 else 0,
+        "ultima_compra": agg["ultima_compra"],
+    }
+
+    # Productos frecuentes (top 5)
+    productos_frecuentes_qs = DetalleVenta.objects.filter(
+        venta__in=ventas_qs.filter(estado__in=_ESTADOS_COMPLETADOS),
+    ).values("producto__nombre_comercial").annotate(
+        veces_comprado=Count("id"),
+        cantidad_total=Sum("cantidad"),
+    ).order_by("-veces_comprado")[:5]
+
+    productos_frecuentes = [
+        {
+            "nombre": p["producto__nombre_comercial"],
+            "veces_comprado": p["veces_comprado"],
+            "cantidad_total": p["cantidad_total"],
+        }
+        for p in productos_frecuentes_qs
+    ]
+
+    # Paginación
+    try:
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(max(1, int(request.query_params.get("page_size", 10))), 50)
+    except (ValueError, TypeError):
+        page, page_size = 1, 10
+
+    ventas_qs = (
+        ventas_qs
+        .select_related("factura", "cliente")
+        .prefetch_related("detalles__producto")
+        .order_by("-created_at")
+    )
+    total = ventas_qs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    ventas_page = ventas_qs[start:end]
+
+    results = []
+    for v in ventas_page:
+        factura_numero = None
+        try:
+            factura_numero = v.factura.numero_factura
+        except Exception:
+            pass
+
+        entry = {
+            "id": v.id,
+            "created_at": v.created_at,
+            "total": float(v.total),
+            "subtotal": float(v.subtotal),
+            "descuento": float(v.descuento),
+            "impuesto": float(v.impuesto),
+            "origen": v.origen,
+            "estado": v.estado,
+            "numero_factura": factura_numero,
+            "detalles": [
+                {
+                    "producto_nombre": d.producto.nombre_comercial,
+                    "cantidad": d.cantidad,
+                    "precio_unitario": float(d.precio_unitario),
+                    "subtotal": float(d.subtotal),
+                }
+                for d in v.detalles.all()
+            ],
+        }
+        if can_see_all:
+            entry["cliente"] = {
+                "id": v.cliente_id,
+                "nombre": f"{v.cliente.nombres} {v.cliente.apellidos}".strip(),
+            }
+        results.append(entry)
+
+    return Response({
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "next": page + 1 if end < total else None,
+        "previous": page - 1 if page > 1 else None,
+        "results": results,
+        "resumen": resumen,
+        "productos_frecuentes": productos_frecuentes,
+    })

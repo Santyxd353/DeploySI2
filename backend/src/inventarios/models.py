@@ -261,6 +261,32 @@ class MovimientoInventario(TenantAwareModel):
         return f"{self.get_tipo_movimiento_display()} - {self.producto.sku} x{self.cantidad} - {self.fecha_movimiento}"
 
 
+class LimiteDispensacion(TenantAwareModel):
+    producto = models.OneToOneField(
+        Producto,
+        on_delete=models.CASCADE,
+        related_name="limite_dispensacion",
+    )
+    cantidad_maxima = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text="Unidades máximas que puede dispensar un cliente en el periodo.",
+    )
+    periodo_dias = models.PositiveIntegerField(
+        default=30,
+        validators=[MinValueValidator(1)],
+        help_text="Ventana de tiempo en días para contabilizar las dispensaciones.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Límite de Dispensación"
+        verbose_name_plural = "Límites de Dispensación"
+
+    def __str__(self):
+        return f"{self.producto.nombre_comercial}: máx {self.cantidad_maxima} u. / {self.periodo_dias} días"
+
+
 class EntradaStock(TenantAwareModel):
     MOTIVOS_CHOICES = [
         ("reposicion", "Reposición Proveedor"),

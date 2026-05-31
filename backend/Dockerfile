@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     gcc \
+    libjpeg-dev \
+    zlib1g-dev \
+    libpng-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip setuptools wheel
@@ -25,9 +28,12 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Solo cliente PostgreSQL (útil para pg_dump, pg_restore, etc.)
+# Cliente PostgreSQL + runtime libs para Pillow (ImageField)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    libjpeg62-turbo \
+    zlib1g \
+    libpng16-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar los paquetes instalados desde el builder

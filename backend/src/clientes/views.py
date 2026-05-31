@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from core.audit import log_system_event
 from core.permissions import IsPharmacistOrAdmin
+from ventas.models import DetalleVenta
 
 from .models import Cliente, RecetaMedica
 from .serializers import ClienteSerializer, RecetaMedicaSerializer
@@ -62,6 +63,106 @@ class ClienteViewSet(viewsets.ModelViewSet):
         ]
 
         return Response(data)
+
+    @action(detail=True, methods=["get"], url_path="historial-compras")
+    def historial_compras(self, request, pk=None):
+        from core.rbac import tiene_permiso
+
+        tenant = getattr(request, "tenant", None)
+        can_see_all = tiene_permiso(request.user, "ventas.ver", tenant=tenant)
+
+        cliente = self.get_object()
+
+        if not can_see_all:
+            mi_cliente = Cliente.objects.filter(usuario=request.user, estado=True).first()
+            if not mi_cliente or mi_cliente.id != cliente.id:
+                return Response(
+                    {"detail": "No tienes permiso para ver el historial de este cliente."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # Ventas completadas con detalles
+        ventas = cliente.ventas.filter(
+            estado__in=_ESTADOS_COMPLETADOS
+        ).select_related("factura").prefetch_related("detalles__producto").order_by("-created_at")
+
+        # Resumen agregado
+        agg = cliente.ventas.filter(
+            estado__in=_ESTADOS_COMPLETADOS
+        ).aggregate(
+            total_gastado=Sum("total"),
+            num_compras=Count("id"),
+            primera_compra=Min("created_at"),
+            ultima_compra=Max("created_at"),
+        )
+
+        total_gastado = float(agg["total_gastado"] or 0)
+        num_compras = agg["num_compras"] or 0
+        primera_compra = agg["primera_compra"]
+        ultima_compra = agg["ultima_compra"]
+
+        frecuencia_dias_promedio = None
+        if num_compras > 1 and primera_compra and ultima_compra:
+            dias_entre = (ultima_compra - primera_compra).days
+            frecuencia_dias_promedio = dias_entre / (num_compras - 1) if num_compras > 1 else dias_entre
+
+        resumen = {
+            "total_gastado": total_gastado,
+            "num_compras": num_compras,
+            "promedio_por_compra": total_gastado / num_compras if num_compras > 0 else 0,
+            "primera_compra": primera_compra,
+            "ultima_compra": ultima_compra,
+            "frecuencia_dias_promedio": round(frecuencia_dias_promedio, 1) if frecuencia_dias_promedio else None,
+        }
+
+        # Productos frecuentes
+        productos_frecuentes = DetalleVenta.objects.filter(
+            venta__cliente=cliente,
+            venta__estado__in=_ESTADOS_COMPLETADOS,
+        ).values("producto__nombre_comercial").annotate(
+            veces_comprado=Count("id"),
+            cantidad_total=Sum("cantidad"),
+        ).order_by("-veces_comprado")[:10]
+
+        # Serializar ventas
+        ventas_data = [
+            {
+                "id": v.id,
+                "created_at": v.created_at,
+                "total": float(v.total),
+                "subtotal": float(v.subtotal),
+                "descuento": float(v.descuento),
+                "impuesto": float(v.impuesto),
+                "origen": v.origen,
+                "estado": v.estado,
+                "numero_factura": v.factura.numero_factura if hasattr(v, "factura") and v.factura else None,
+                "detalles": [
+                    {
+                        "producto_nombre": d.producto.nombre_comercial,
+                        "cantidad": d.cantidad,
+                        "precio_unitario": float(d.precio_unitario),
+                        "subtotal": float(d.subtotal),
+                    }
+                    for d in v.detalles.all()
+                ],
+            }
+            for v in ventas
+        ]
+
+        productos_frecuentes_data = [
+            {
+                "nombre": p["producto__nombre_comercial"],
+                "veces_comprado": p["veces_comprado"],
+                "cantidad_total": p["cantidad_total"],
+            }
+            for p in productos_frecuentes
+        ]
+
+        return Response({
+            "ventas": ventas_data,
+            "resumen": resumen,
+            "productos_frecuentes": productos_frecuentes_data,
+        })
 
     def get_queryset(self):
         queryset = super().get_queryset()

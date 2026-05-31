@@ -29,6 +29,9 @@ export const clientesService = {
 
   segmentacion: (params) => requestJson(`/api/clientes/segmentacion/${buildQuery(params)}`),
 
+  historialCompras: (clienteId, params) =>
+    requestJson(`/api/clientes/${clienteId}/historial-compras/${buildQuery(params)}`),
+
   // ── Recetas ─────────────────────────────────────────────────────────────
   listarRecetas: (clienteId, params = {}) => {
     const query = buildQuery({ cliente: clienteId, ordering: "-created_at", ...params });
