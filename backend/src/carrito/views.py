@@ -6,12 +6,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from core.audit import log_system_event
+from reportes.services import ReporteError, transcribir_audio_local
 from ventas.serializers import VentaSerializer
 from ventas.services import VentaServiceError, crear_venta_service
 
 from .models import Carrito
 from .serializers import CarritoActualizarItemSerializer, CarritoAgregarItemSerializer, CarritoConfirmarSerializer, CarritoSerializer
 from .services import CarritoServiceError, actualizar_item_carrito, agregar_item_carrito, calcular_totales_carrito, eliminar_item_carrito, obtener_o_crear_carrito_activo
+from .voice_search import parse_voice_search_command
 
 
 def _es_admin_operativo(user):
@@ -197,3 +199,33 @@ def carrito_confirmar(request):
     carrito.save(update_fields=["estado", "updated_at"])
 
     return Response({"carrito_id": carrito.id, "venta": VentaSerializer(venta).data}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def carrito_buscar_audio(request):
+    audio = request.FILES.get("audio")
+    try:
+        transcripcion = transcribir_audio_local(audio)
+        interpretacion = parse_voice_search_command(transcripcion)
+    except ReporteError as exc:
+        return Response({"detail": str(exc), "code": getattr(exc, "code", "audio_invalido")}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.user and request.user.is_authenticated:
+        log_system_event(
+            request=request,
+            accion="BUSQUEDA_AUDIO",
+            modulo="carrito",
+            resultado="SUCCESS",
+            mensaje=f"Busqueda por audio: {interpretacion.get('intent', 'unknown')}",
+            entidad="Carrito",
+        )
+
+    return Response(
+        {
+            "transcripcion": transcripcion,
+            "texto": transcripcion,
+            "interpretacion": interpretacion,
+        },
+        status=status.HTTP_200_OK,
+    )

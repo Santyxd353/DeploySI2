@@ -291,11 +291,11 @@ FIREBASE_SERVICE_ACCOUNT_FILE = os.getenv("FIREBASE_SERVICE_ACCOUNT_FILE", "")
 FCM_API_KEY = os.getenv("FCM_API_KEY", "")
 FCM_SENDER_ID = os.getenv("FCM_SENDER_ID", "")
 
-# Gemini reports assistant
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_REPORTS_MODEL = os.getenv("GEMINI_REPORTS_MODEL", "gemini-2.5-flash")
-GEMINI_AUDIO_MODEL = os.getenv("GEMINI_AUDIO_MODEL", GEMINI_REPORTS_MODEL)
-GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite")
+# Reportes: transcripcion local (Faster-Whisper)
+REPORTS_STT_MODEL = os.getenv("REPORTS_STT_MODEL", "small")
+REPORTS_STT_DEVICE = os.getenv("REPORTS_STT_DEVICE", "cpu")
+REPORTS_STT_COMPUTE_TYPE = os.getenv("REPORTS_STT_COMPUTE_TYPE", "int8")
+REPORTS_AUDIO_DEBUG = os.getenv("REPORTS_AUDIO_DEBUG", "False").lower() == "true"
 
 
 LOGGING = {

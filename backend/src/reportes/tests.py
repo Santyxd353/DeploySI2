@@ -1,67 +1,16 @@
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import connection
-from django.test import SimpleTestCase, override_settings
 from django_tenants.utils import schema_context
 from rest_framework import status
 from rest_framework.test import APITestCase
-from requests import Response
 
 from clientes.models import Cliente
 from inventarios.models import Categoria, Inventario, Laboratorio, Producto
-from reportes.services import _gemini_error_message
 from tenants.context import clear_current_tenant, set_current_tenant
 from tenants.models import Domain, Tenant
 from ventas.models import DetalleVenta, Venta
-
-
-class GeminiErrorMessageTests(SimpleTestCase):
-    def _response(self, status_code, content):
-        response = Response()
-        response.status_code = status_code
-        response._content = content
-        return response
-
-    def test_mensaje_gemini_key_invalida(self):
-        response = self._response(403, b'{"error":{"message":"API key not valid"}}')
-
-        message = _gemini_error_message(response, "gemini-3.1-flash-lite")
-
-        self.assertIn("GEMINI_API_KEY", message)
-        self.assertIn("valida", message)
-
-    def test_mensaje_gemini_modelo_no_disponible(self):
-        response = self._response(404, b'{"error":{"message":"model not found"}}')
-
-        message = _gemini_error_message(response, "gemini-no-existe")
-
-        self.assertIn("Modelo Gemini no disponible", message)
-        self.assertIn("gemini-no-existe", message)
-
-    @override_settings(
-        GEMINI_API_KEY="test-key",
-        GEMINI_REPORTS_MODEL="gemini-no-existe",
-        GEMINI_FALLBACK_MODELS="gemini-2.5-flash",
-    )
-    @patch("reportes.services.requests.post")
-    def test_gemini_usa_fallback_si_modelo_configurado_no_existe(self, mocked_post):
-        from reportes.services import _gemini_generate_content
-
-        not_found = self._response(404, b'{"error":{"message":"model not found"}}')
-        ok = self._response(
-            200,
-            b'{"candidates":[{"content":{"parts":[{"text":"{\\"resultado\\":\\"ok\\"}"}]}}]}',
-        )
-        mocked_post.side_effect = [not_found, ok]
-
-        result = _gemini_generate_content([{"text": "hola"}])
-
-        self.assertEqual(result, '{"resultado":"ok"}')
-        self.assertEqual(mocked_post.call_count, 2)
-        self.assertIn("gemini-no-existe", mocked_post.call_args_list[0].args[0])
-        self.assertIn("gemini-2.5-flash", mocked_post.call_args_list[1].args[0])
 
 
 class ReportesApiTests(APITestCase):
@@ -192,20 +141,77 @@ class ReportesApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["filas"][0]["sku"], "MED-1")
 
-    @patch("reportes.services._gemini_generate_content")
-    def test_ia_texto_con_gemini_mockeado(self, mocked_gemini):
-        mocked_gemini.return_value = (
-            '{"tipo_reporte":"medicamentos_mas_vendidos","periodo":"todo",'
-            '"fecha_inicio":null,"fecha_fin":null,"top":10,"origen":null,'
-            '"estado":null,"stock_estado":null,"tipo_cliente":null,'
-            '"estado_receta":null,"categoria_texto":null,"laboratorio_texto":null,'
-            '"producto_texto":null,"sku":null,"resultado":"ok","mensaje":"ok"}'
-        )
+    def test_ia_texto_interpretacion_local(self):
         self.client.force_authenticate(user=self.user)
         response = self.client.post(
             "/api/reportes/ia/interpretar/",
-            {"texto": "medicamentos mas vendidos"},
+            {"texto": "medicamentos mas vendidos este mes"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["reporte"]["tipo_reporte"], "medicamentos_mas_vendidos")
+
+    def test_ia_texto_ambigua_retorna_error(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/reportes/ia/interpretar/",
+            {"texto": "quiero algo"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("code"), "ia_ambigua")
+
+    def test_ia_texto_soporta_intenciones_varias_y_typos(self):
+        self.client.force_authenticate(user=self.user)
+        casos = [
+            ("productos con estot bajo", "stock_bajo"),
+            ("ventas por vendedor este mes", "ventas_por_vendedor"),
+            ("ventas por hora hoy", "ventas_por_hora"),
+            ("clientes nuevos este mes", "clientes_nuevos"),
+            ("recetas vencidas este mes", "recetas_vencidas"),
+            ("rentabilidad de productos este mes", "rentabilidad_productos"),
+        ]
+
+        for texto, esperado in casos:
+            with self.subTest(texto=texto, esperado=esperado):
+                response = self.client.post(
+                    "/api/reportes/ia/interpretar/",
+                    {"texto": texto},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data["reporte"]["tipo_reporte"], esperado)
+
+    def test_ia_texto_entradas_por_producto(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/reportes/ia/interpretar/",
+            {"texto": "entradas de productos este mes"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["reporte"]["tipo_reporte"], "entradas_por_producto")
+
+    def test_ia_texto_ventas_por_categoria_con_texto(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/reportes/ia/interpretar/",
+            {"texto": "ventas por categoria medicamentos este mes"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["reporte"]["tipo_reporte"], "ventas_por_categoria")
+
+    def test_ia_texto_ventas_mes_especifico_con_anio(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/reportes/ia/interpretar/",
+            {"texto": "ventas del mes de enero 2025"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["reporte"]["tipo_reporte"], "ventas_resumen")
+        filtros = response.data["reporte"].get("filtros_aplicados", {})
+        self.assertEqual(filtros.get("periodo"), "personalizado")
+        self.assertEqual(filtros.get("fecha_inicio"), "2025-01-01")
+        self.assertEqual(filtros.get("fecha_fin"), "2025-01-31")

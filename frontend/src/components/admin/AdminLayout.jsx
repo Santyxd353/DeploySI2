@@ -8,6 +8,7 @@ import {
   CogIcon,
   DollarIcon,
   LogOutIcon,
+  MedicalCrossIcon,
   MegaphoneIcon,
   PackageIcon,
   ShieldIcon,
@@ -22,6 +23,8 @@ import { useAuth } from "../../context/AuthContext";
 export default function AdminLayout({ activeSection, setActiveSection, currentUser, onLogout, children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showUsersSection, setShowUsersSection] = useState(false);
+  const [showProductsSection, setShowProductsSection] = useState(false);
+  const [showSecuritySection, setShowSecuritySection] = useState(false);
   const [showInventorySection, setShowInventorySection] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -49,6 +52,8 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const userManagementSectionIds = ["users", "roles-permisos"];
+  const productManagementSectionIds = ["products", "labs", "categories"];
+  const securityManagementSectionIds = ["bitacora", "backups"];
   const inventorySectionId = "inventory";
 
   const activeSectionByPath = useMemo(() => {
@@ -73,13 +78,29 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     [visibleSections]
   );
 
+  const productManagementSections = useMemo(
+    () => visibleSections.filter((section) => productManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
+  const securityManagementSections = useMemo(
+    () => visibleSections.filter((section) => securityManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
   const inventorySection = useMemo(
     () => visibleSections.find((section) => section.id === inventorySectionId) || null,
     [visibleSections]
   );
 
   const regularSections = useMemo(
-    () => visibleSections.filter((section) => !userManagementSectionIds.includes(section.id) && section.id !== inventorySectionId),
+    () => visibleSections.filter(
+      (section) =>
+        !userManagementSectionIds.includes(section.id)
+        && !productManagementSectionIds.includes(section.id)
+        && !securityManagementSectionIds.includes(section.id)
+        && section.id !== inventorySectionId
+    ),
     [visibleSections]
   );
 
@@ -94,6 +115,8 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const isUsersSectionActive = userManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isProductsSectionActive = productManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isSecuritySectionActive = securityManagementSections.some((section) => section.id === resolvedActiveSection);
   const inventoryView = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return params.get("view") || "dashboard";
@@ -105,6 +128,18 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
       setShowUsersSection(true);
     }
   }, [isUsersSectionActive]);
+
+  useEffect(() => {
+    if (isProductsSectionActive) {
+      setShowProductsSection(true);
+    }
+  }, [isProductsSectionActive]);
+
+  useEffect(() => {
+    if (isSecuritySectionActive) {
+      setShowSecuritySection(true);
+    }
+  }, [isSecuritySectionActive]);
 
   useEffect(() => {
     if (isInventorySectionActive) {
@@ -264,6 +299,48 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
               </div>
             ) : null}
 
+            {productManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowProductsSection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isProductsSectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isProductsSectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <PackageIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Productos</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showProductsSection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showProductsSection ? (
+                  <div className="space-y-1 pl-3">
+                    {productManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {inventorySection ? (
               <div className="space-y-1.5">
                 <button
@@ -323,7 +400,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
             ) : null}
 
             {otherRegularSections.map((section) => {
-              const Icon = iconMap[section.icon] || ShieldIcon;
+              const Icon = section.id === "treatments" ? MedicalCrossIcon : iconMap[section.icon] || ShieldIcon;
               const isActive = resolvedActiveSection === section.id;
 
               return (
@@ -344,6 +421,48 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                 </button>
               );
             })}
+
+            {securityManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSecuritySection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isSecuritySectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isSecuritySectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <ShieldIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Seguridad</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showSecuritySection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showSecuritySection ? (
+                  <div className="space-y-1 pl-3">
+                    {securityManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </nav>
         </aside>
 

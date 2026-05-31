@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 from inventarios.models import Categoria, Inventario, Laboratorio, Producto
 from tenants.context import clear_current_tenant, set_current_tenant
 from tenants.models import Domain, Tenant
+from .voice_search import parse_voice_search_command
 
 
 class CarritoApiFlowTests(APITestCase):
@@ -75,3 +76,17 @@ class CarritoApiFlowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["items"]), 1)
         self.assertEqual(response.data["items"][0]["cantidad"], 2)
+
+    def test_voice_parser_busqueda_texto(self):
+        result = parse_voice_search_command("buscar paracetamol")
+        self.assertEqual(result["intent"], "search_text")
+        self.assertEqual(result["query"], "paracetamol")
+
+    def test_voice_parser_limpiar(self):
+        result = parse_voice_search_command("mostrar todo")
+        self.assertEqual(result["intent"], "clear_filters")
+
+    def test_voice_parser_categoria(self):
+        result = parse_voice_search_command("filtrar por suplementos")
+        self.assertEqual(result["intent"], "filter_category")
+        self.assertEqual(result["categoria"], "suplementos")

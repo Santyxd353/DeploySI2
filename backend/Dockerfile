@@ -28,6 +28,7 @@ WORKDIR /app
 # Solo cliente PostgreSQL (útil para pg_dump, pg_restore, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar los paquetes instalados desde el builder

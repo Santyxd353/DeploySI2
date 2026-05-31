@@ -320,6 +320,14 @@ export function AlertTriangleIcon({ className }) {
   );
 }
 
+export function MedicalCrossIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" />
+    </BaseIcon>
+  );
+}
+
 export function HistoryIcon({ className }) {
   return (
     <BaseIcon className={className}>

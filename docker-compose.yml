@@ -31,6 +31,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REPORTS_STT_MODEL: ${REPORTS_STT_MODEL:-small}
+      REPORTS_STT_DEVICE: ${REPORTS_STT_DEVICE:-cpu}
+      REPORTS_STT_COMPUTE_TYPE: ${REPORTS_STT_COMPUTE_TYPE:-int8}
+      HF_HOME: /models-cache
       SAAS_ROOT_DOMAIN: ${SAAS_ROOT_DOMAIN:-localhost}
       SAAS_PUBLIC_BASE_URL: ${SAAS_PUBLIC_BASE_URL:-http://localhost:5173}
       SAAS_BILLING_SUCCESS_URL: ${SAAS_BILLING_SUCCESS_URL:-http://localhost:5173/admin/suscripcion?status=ok}
@@ -43,6 +47,7 @@ services:
     volumes:
       - ./backend/src:/app
       - ./backups:/app/backups
+      - whisper_cache:/models-cache
 
   frontend:
     build:
@@ -132,3 +137,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  whisper_cache:

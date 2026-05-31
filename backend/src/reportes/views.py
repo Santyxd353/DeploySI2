@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.conf import settings
 
 from core.audit import log_system_event
 from core.rbac import tiene_permiso
@@ -16,7 +17,14 @@ def _require_reportes_perm(request):
 
 
 def _error_response(exc):
-    return Response({"detail": str(exc), "code": getattr(exc, "code", "reporte_error")}, status=status.HTTP_400_BAD_REQUEST)
+    body = {
+        "detail": str(exc),
+        "code": getattr(exc, "code", "reporte_error"),
+    }
+    payload = getattr(exc, "payload", None)
+    if isinstance(payload, dict):
+        body.update(payload)
+    return Response(body, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(["GET"])
@@ -108,6 +116,16 @@ def interpretar_audio_view(request):
             mensaje=str(exc),
         )
         return _error_response(exc)
+
+    if settings.REPORTS_AUDIO_DEBUG:
+        print(
+            "[REPORTES_AUDIO_DEBUG] transcripcion=",
+            result.get("transcripcion", ""),
+            " tipo_reporte=",
+            result.get("reporte", {}).get("tipo_reporte", ""),
+            " filtros=",
+            result.get("reporte", {}).get("filtros_aplicados", {}),
+        )
 
     log_system_event(
         request=request,
