@@ -27,6 +27,7 @@ const AdminReportesPage = lazy(() => import("./pages/admin/AdminReportesPage"));
 const AdminTratamientosPage = lazy(() => import("./pages/admin/AdminTratamientosPage"));
 const ClientePerfilPage = lazy(() => import("./pages/ClientePerfilPage"));
 const MisComprasPage = lazy(() => import("./pages/MisComprasPage"));
+const MisPuntosPage = lazy(() => import("./pages/MisPuntosPage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
@@ -67,6 +68,7 @@ function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/perfil" element={<ClientePerfilPage />} />
               <Route path="/mis-compras" element={<MisComprasPage />} />
+              <Route path="/mis-puntos" element={<MisPuntosPage />} />
             </Route>
 
             {/* Rutas de administración */}

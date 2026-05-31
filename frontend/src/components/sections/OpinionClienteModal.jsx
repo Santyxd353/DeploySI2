@@ -168,7 +168,13 @@ export default function OpinionClienteModal({ onClose }) {
       await opinionesService.crear({ tipo, puntuacion: rating, comentario: comentario.trim() });
       setSubmitted(true);
     } catch (err) {
-      const msg = err?.data?.non_field_errors?.[0] ?? err?.data?.detail ?? "No se pudo enviar la opinión.";
+      const msg =
+        err?.detail ||
+        err?.tipo?.[0] ||
+        err?.venta?.[0] ||
+        err?.producto?.[0] ||
+        err?.non_field_errors?.[0] ||
+        "No se pudo enviar la opinión. Intenta más tarde.";
       setError(msg);
     } finally {
       setSubmitting(false);

@@ -67,22 +67,6 @@ const CRM_SECTIONS = [
     available: true,
   },
   {
-    id: "actividad",
-    label: "Actividad",
-    description: "Historial y seguimiento",
-    icon: HistoryIcon,
-    path: null,
-    available: false,
-  },
-  {
-    id: "analitica",
-    label: "Analítica",
-    description: "Métricas de clientes",
-    icon: ChartBarIcon,
-    path: null,
-    available: false,
-  },
-  {
     id: "puntos",
     label: "Puntos",
     description: "Fidelidad y canjes",
