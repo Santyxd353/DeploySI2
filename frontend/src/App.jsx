@@ -25,6 +25,7 @@ const AdminPrediccionesPage = lazy(() => import("./pages/admin/AdminPredicciones
 const AdminReportesPage = lazy(() => import("./pages/admin/AdminReportesPage"));
 const AdminTratamientosPage = lazy(() => import("./pages/admin/AdminTratamientosPage"));
 const ClientePerfilPage = lazy(() => import("./pages/ClientePerfilPage"));
+const MisComprasPage = lazy(() => import("./pages/MisComprasPage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
@@ -38,6 +39,9 @@ const GlobalLoginPage = lazy(() => import("./pages/saas/GlobalLoginPage"));
 const TenantSubscriptionPage = lazy(() => import("./pages/admin/TenantSubscriptionPage"));
 const GlobalTenantsPage = lazy(() => import("./pages/admin/GlobalTenantsPage"));
 const SegmentacionClientesPage = lazy(() => import("./pages/admin/SegmentacionClientesPage"));
+const AdminOpinionesPage = lazy(() => import("./pages/admin/AdminOpinionesPage"));
+const AdminPublicidadPage = lazy(() => import("./pages/admin/AdminPublicidadPage"));
+const AdminLimitesDispensacionPage = lazy(() => import("./pages/admin/AdminLimitesDispensacionPage"));
 
 function App() {
   const hasTenantSubdomain = Boolean(getTenantSubdomain());
@@ -61,6 +65,7 @@ function App() {
             {/* Rutas protegidas para clientes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/perfil" element={<ClientePerfilPage />} />
+              <Route path="/mis-compras" element={<MisComprasPage />} />
             </Route>
 
             {/* Rutas de administración */}
@@ -84,6 +89,9 @@ function App() {
               <Route path="/admin/suscripcion" element={<TenantSubscriptionPage />} />
               <Route path="/admin/global/tenants" element={<GlobalTenantsPage />} />
               <Route path="/admin/segmentacion-clientes" element={<SegmentacionClientesPage />} />
+              <Route path="/admin/opiniones" element={<AdminOpinionesPage />} />
+              <Route path="/admin/publicidad" element={<AdminPublicidadPage />} />
+              <Route path="/admin/limites-dispensacion" element={<AdminLimitesDispensacionPage />} />
             </Route>
 
             {/* Punto de venta (POS) */}

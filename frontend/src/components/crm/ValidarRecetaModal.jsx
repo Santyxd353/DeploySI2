@@ -88,6 +88,12 @@ export default function ValidarRecetaModal({ receta, onClose, onValidada }) {
                 <span className="text-slate-700">{receta.fecha_vencimiento}</span>
               </div>
             ) : null}
+            {receta.fecha_validez ? (
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-500">Validez</span>
+                <span className="text-slate-700">{receta.fecha_validez}</span>
+              </div>
+            ) : null}
             {receta.archivo_url ? (
               <a
                 href={receta.archivo_url}
@@ -97,6 +103,18 @@ export default function ValidarRecetaModal({ receta, onClose, onValidada }) {
               >
                 Ver archivo adjunto
               </a>
+            ) : null}
+            {receta.firma_digital_url ? (
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">Firma digital</span>
+                <a href={receta.firma_digital_url} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={receta.firma_digital_url}
+                    alt="Firma digital"
+                    className="h-16 w-auto rounded-xl border border-slate-200 object-contain shadow-sm hover:opacity-80 transition"
+                  />
+                </a>
+              </div>
             ) : null}
           </div>
 

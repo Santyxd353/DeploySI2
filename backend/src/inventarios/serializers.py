@@ -8,6 +8,7 @@ from .models import (
     LoteProducto,
     MovimientoInventario,
     EntradaStock,
+    LimiteDispensacion,
 )
 
 
@@ -171,3 +172,30 @@ class EntradaStockSerializer(serializers.ModelSerializer):
         if lote and lote.estado != "disponible":
             raise serializers.ValidationError({"lote": "Solo se permiten lotes en estado disponible."})
         return attrs
+
+
+class LimiteDispensacionSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.ReadOnlyField(source="producto.nombre_comercial")
+    producto_sku = serializers.ReadOnlyField(source="producto.sku")
+
+    class Meta:
+        model = LimiteDispensacion
+        fields = [
+            "id",
+            "producto",
+            "producto_nombre",
+            "producto_sku",
+            "cantidad_maxima",
+            "periodo_dias",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_producto(self, value):
+        qs = LimiteDispensacion.objects.filter(producto=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Este producto ya tiene un límite de dispensación configurado.")
+        return value

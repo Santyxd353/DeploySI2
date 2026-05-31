@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CloseIcon, ClipboardListIcon, UserIcon } from "../ui/Icons";
+import { CloseIcon, ClipboardListIcon, UserIcon, CartIcon } from "../ui/Icons";
 import { useAuth } from "../../context/AuthContext";
 import RecetasListPanel from "./RecetasListPanel";
 import RecetaMedicaFormModal from "./RecetaMedicaFormModal";
+import HistorialComprasPanel from "./HistorialComprasPanel";
 
 function InfoRow({ label, value }) {
   if (!value) return null;
@@ -84,6 +85,7 @@ function TabHistorialMedico({ cliente }) {
 const TABS = [
   { id: "info", label: "Información", Icon: UserIcon },
   { id: "historial", label: "Historial Médico", Icon: ClipboardListIcon },
+  { id: "compras", label: "Historial de Compras", Icon: CartIcon },
 ];
 
 export default function ClienteDetallePanel({ cliente, onClose }) {
@@ -155,8 +157,10 @@ export default function ClienteDetallePanel({ cliente, onClose }) {
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab === "info" ? (
             <TabInformacion cliente={cliente} />
-          ) : (
+          ) : activeTab === "historial" ? (
             <TabHistorialMedico cliente={cliente} />
+          ) : (
+            <HistorialComprasPanel clienteId={cliente.id} />
           )}
         </div>
       </div>

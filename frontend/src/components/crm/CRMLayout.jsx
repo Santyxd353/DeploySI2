@@ -7,10 +7,13 @@ import {
   ClipboardListIcon,
   HistoryIcon,
   LogOutIcon,
+  MegaphoneIcon,
   ShieldIcon,
+  SparkIcon,
   UserIcon,
   UsersGroupIcon,
 } from "../ui/Icons";
+
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 import { useAuth } from "../../context/AuthContext";
 
@@ -37,6 +40,30 @@ const CRM_SECTIONS = [
     description: "Segmentación de clientes",
     icon: UsersGroupIcon,
     path: "/admin/segmentacion-clientes",
+    available: true,
+  },
+  {
+    id: "opiniones",
+    label: "Opiniones",
+    description: "Puntuaciones y reseñas",
+    icon: SparkIcon,
+    path: "/admin/opiniones",
+    available: true,
+  },
+  {
+    id: "publicidad",
+    label: "Publicidad",
+    description: "Campañas y promociones",
+    icon: MegaphoneIcon,
+    path: "/admin/publicidad",
+    available: true,
+  },
+  {
+    id: "limites",
+    label: "Límites",
+    description: "Límites de dispensación",
+    icon: ShieldIcon,
+    path: "/admin/limites-dispensacion",
     available: true,
   },
   {

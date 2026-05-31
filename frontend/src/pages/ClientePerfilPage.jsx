@@ -1,12 +1,35 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
+import { clientesService } from "../services/clientesService";
+import HistorialComprasPanel from "../components/crm/HistorialComprasPanel";
 
 export default function ClientePerfilPage() {
   const navigate = useNavigate();
   const { user, logout, isAdmin } = useAuth();
+  const [clienteId, setClienteId] = useState(null);
+  const [loadingCliente, setLoadingCliente] = useState(false);
+
+  // Obtener el cliente asociado al usuario logueado
+  useEffect(() => {
+    if (user && user.id) {
+      setLoadingCliente(true);
+      clientesService
+        .listar({ usuario: user.id })
+        .then((res) => {
+          const clientes = Array.isArray(res) ? res : res.results || [];
+          if (clientes.length > 0) {
+            setClienteId(clientes[0].id);
+          }
+        })
+        .catch(() => {
+          setClienteId(null);
+        })
+        .finally(() => setLoadingCliente(false));
+    }
+  }, [user]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -56,6 +79,14 @@ export default function ClientePerfilPage() {
                   <p className="mt-1 text-sm font-bold text-slate-900">Cliente</p>
                 </article>
               </div>
+
+            {/* Historial de compras */}
+            {clienteId && (
+              <div className="mt-8 border-t border-slate-100 pt-6">
+                <h2 className="mb-4 text-lg font-bold text-slate-900">Mis compras</h2>
+                <HistorialComprasPanel clienteId={clienteId} />
+              </div>
+            )}
           </CardContent>
 
           <CardFooter className="flex flex-wrap gap-2 border-t border-slate-100 bg-slate-50/60 py-4">
@@ -64,6 +95,12 @@ export default function ClientePerfilPage() {
               className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
             >
               Volver al inicio
+            </Link>
+            <Link
+              to="/mis-compras"
+              className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+            >
+              Mis compras
             </Link>
             <Button onClick={handleLogout} className="bg-rose-600 text-white hover:bg-rose-500">
               Cerrar sesion
