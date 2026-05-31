@@ -83,6 +83,7 @@ async function fetchAllPaginated(serviceListFn, initialParams = {}) {
 }
 
 export default function CatalogoFarmaceutico() {
+  const PRODUCTOS_PAGE_SIZE = 6;
   const navigate = useNavigate();
   const { user } = useAuth();
   const [categorias, setCategorias] = useState([]);
@@ -93,22 +94,28 @@ export default function CatalogoFarmaceutico() {
   const [productos, setProductos] = useState([]);
   const [loadingProductos, setLoadingProductos] = useState(true);
   const [errorProductos, setErrorProductos] = useState("");
-  const [loadingBusqueda, setLoadingBusqueda] = useState(true);
+  const [loadingBusqueda, setLoadingBusqueda] = useState(false);
   const [filtroCategoriaBusqueda, setFiltroCategoriaBusqueda] = useState("all");
   const [queryBusqueda, setQueryBusqueda] = useState("");
+  const [resultadosBusquedaPreview, setResultadosBusquedaPreview] = useState([]);
   const [showBusquedaPanel, setShowBusquedaPanel] = useState(false);
   const [mostrarResultadosBusqueda, setMostrarResultadosBusqueda] = useState(false);
   const [detalleProducto, setDetalleProducto] = useState(null);
   const [cartItems, setCartItems] = useState([]);
+  const [cartSyncingIds, setCartSyncingIds] = useState([]);
+  const [cartActionError, setCartActionError] = useState("");
   const [showCartPanel, setShowCartPanel] = useState(false);
   const [categoriaPaginaActiva, setCategoriaPaginaActiva] = useState(0);
-  const [productoPaginaActiva, setProductoPaginaActiva] = useState(0);
+  const [productoPaginaActiva, setProductoPaginaActiva] = useState(1);
+  const [totalProductos, setTotalProductos] = useState(0);
+  const [hayPaginaSiguiente, setHayPaginaSiguiente] = useState(false);
   const [categoriasViewportWidth, setCategoriasViewportWidth] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const categoriasViewportRef = useRef(null);
   const busquedaRef = useRef(null);
   const detalleModalRef = useRef(null);
+  const modoBusquedaKey = mostrarResultadosBusqueda ? `${queryBusqueda}|${filtroCategoriaBusqueda}` : "";
   useOutsideClick(busquedaRef, () => setShowBusquedaPanel(false));
   useOutsideClick(detalleModalRef, () => {
     if (detalleProducto) setDetalleProducto(null);
@@ -155,21 +162,32 @@ export default function CatalogoFarmaceutico() {
       setLoadingProductos(true);
       setErrorProductos("");
       try {
-        const params = { estado: true };
-        if (categoriaActiva) params.categoria = categoriaActiva;
-        if (subcategoriaActiva) params.subcategoria = subcategoriaActiva;
-        const items = await fetchAllPaginated(productosService.listar, params);
+        const params = {
+          estado: true,
+          visible_web: true,
+          page: productoPaginaActiva,
+          page_size: PRODUCTOS_PAGE_SIZE,
+        };
+        if (mostrarResultadosBusqueda) {
+          if (queryBusqueda.trim()) params.search = queryBusqueda.trim();
+          if (filtroCategoriaBusqueda !== "all") params.categoria = filtroCategoriaBusqueda;
+        } else {
+          if (categoriaActiva) params.categoria = categoriaActiva;
+          if (subcategoriaActiva) params.subcategoria = subcategoriaActiva;
+        }
+        const response = await productosService.listar(params);
         if (!mounted) return;
-        setProductos(items);
+        setProductos(Array.isArray(response?.results) ? response.results : []);
+        setTotalProductos(Number(response?.count || 0));
+        setHayPaginaSiguiente(Boolean(response?.next));
       } catch {
         if (!mounted) return;
         setProductos([]);
         setErrorProductos("No se pudieron cargar los productos.");
+        setTotalProductos(0);
+        setHayPaginaSiguiente(false);
       } finally {
-        if (mounted) {
-          setLoadingProductos(false);
-          setLoadingBusqueda(false);
-        }
+        if (mounted) setLoadingProductos(false);
       }
     };
 
@@ -177,7 +195,13 @@ export default function CatalogoFarmaceutico() {
     return () => {
       mounted = false;
     };
-  }, [categoriaActiva, subcategoriaActiva]);
+  }, [
+    categoriaActiva,
+    subcategoriaActiva,
+    mostrarResultadosBusqueda,
+    modoBusquedaKey,
+    productoPaginaActiva,
+  ]);
 
 
 
@@ -259,6 +283,16 @@ export default function CatalogoFarmaceutico() {
     }
   }, [categoriasPaginadas, categoriaPaginaActiva]);
 
+  useEffect(() => {
+    if (!categoriaActiva || categoriasPaginadas.length === 0) return;
+    const targetPage = categoriasPaginadas.findIndex((page) =>
+      page.some((cat) => Number(cat.id) === Number(categoriaActiva))
+    );
+    if (targetPage >= 0 && targetPage !== categoriaPaginaActiva) {
+      setCategoriaPaginaActiva(targetPage);
+    }
+  }, [categoriaActiva, categoriasPaginadas, categoriaPaginaActiva]);
+
   const paginaCategoriasActual = categoriasPaginadas[categoriaPaginaActiva] || [];
 
   const normalizarImagen = (url) => {
@@ -279,55 +313,59 @@ export default function CatalogoFarmaceutico() {
     }).format(numero);
   };
 
-  const resultadosBusquedaTodos = useMemo(() => {
-    const q = queryBusqueda.trim().toLowerCase();
-    return productos.filter((item) => {
-      const cumpleCategoria = filtroCategoriaBusqueda === "all" || Number(item.categoria) === Number(filtroCategoriaBusqueda);
-      if (!cumpleCategoria) return false;
-      if (!q) return true;
-      const texto = [
-        item.nombre_comercial,
-        item.nombre_generico,
-        item.sku,
-        item.categoria_nombre,
-        item.laboratorio_nombre,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return texto.includes(q);
-    });
-  }, [productos, filtroCategoriaBusqueda, queryBusqueda]);
-
-  const resultadosBusqueda = useMemo(() => {
+  useEffect(() => {
+    let mounted = true;
     const q = queryBusqueda.trim();
-    if (!q) return [];
-    return resultadosBusquedaTodos.slice(0, 6);
-  }, [resultadosBusquedaTodos, queryBusqueda]);
-
-  const productosBase = mostrarResultadosBusqueda ? resultadosBusquedaTodos : productos;
-
-  const productosPaginados = useMemo(() => {
-    const pageSize = 6;
-    const pages = [];
-    for (let i = 0; i < productosBase.length; i += pageSize) {
-      pages.push(productosBase.slice(i, i + pageSize));
+    if (!q) {
+      setResultadosBusquedaPreview([]);
+      setLoadingBusqueda(false);
+      return () => {
+        mounted = false;
+      };
     }
-    return pages;
-  }, [productosBase]);
+
+    const cargarPreviewBusqueda = async () => {
+      setLoadingBusqueda(true);
+      try {
+        const params = {
+          estado: true,
+          visible_web: true,
+          search: q,
+          page: 1,
+          page_size: 6,
+        };
+        if (filtroCategoriaBusqueda !== "all") params.categoria = filtroCategoriaBusqueda;
+        const response = await productosService.listar(params);
+        if (!mounted) return;
+        setResultadosBusquedaPreview(Array.isArray(response?.results) ? response.results : []);
+      } catch {
+        if (!mounted) return;
+        setResultadosBusquedaPreview([]);
+      } finally {
+        if (mounted) setLoadingBusqueda(false);
+      }
+    };
+
+    cargarPreviewBusqueda();
+    return () => {
+      mounted = false;
+    };
+  }, [queryBusqueda, filtroCategoriaBusqueda]);
 
   useEffect(() => {
-    setProductoPaginaActiva(0);
-  }, [categoriaActiva, subcategoriaActiva]);
+    setProductoPaginaActiva(1);
+  }, [categoriaActiva, subcategoriaActiva, mostrarResultadosBusqueda, queryBusqueda, filtroCategoriaBusqueda]);
 
-  useEffect(() => {
-    if (productoPaginaActiva > productosPaginados.length - 1) {
-      setProductoPaginaActiva(0);
-    }
-  }, [productosPaginados, productoPaginaActiva]);
-
-  const paginaProductosActual = productosPaginados[productoPaginaActiva] || [];
+  const totalPaginasProductos = Math.max(1, Math.ceil(totalProductos / PRODUCTOS_PAGE_SIZE));
+  const paginaProductosActual = productos;
   const closeDetalleProducto = () => setDetalleProducto(null);
+  const getCantidadEnCarrito = useCallback(
+    (productoId) =>
+      cartItems
+        .filter((item) => Number(item.id) === Number(productoId))
+        .reduce((acc, item) => acc + Number(item.cantidad || 0), 0),
+    [cartItems]
+  );
   const subtotalCarrito = useMemo(
     () => cartItems.reduce((acc, item) => acc + Number(item.precio_venta || 0) * Number(item.cantidad || 0), 0),
     [cartItems]
@@ -335,47 +373,127 @@ export default function CatalogoFarmaceutico() {
   const impuestoCarrito = useMemo(() => subtotalCarrito * 0.0825, [subtotalCarrito]);
   const totalCarrito = useMemo(() => subtotalCarrito + impuestoCarrito, [subtotalCarrito, impuestoCarrito]);
 
+  const mapBackendCartItems = useCallback((items = []) => {
+    return items.map((item) => ({
+      id: item.producto,
+      producto_id: item.producto,
+      carrito_item_id: item.id,
+      nombre_comercial: item.producto_nombre || item.producto,
+      precio_venta: Number(item.precio_unitario || 0),
+      imagen: "",
+      cantidad: Number(item.cantidad || 0),
+    }));
+  }, []);
+
+  const getApiErrorMessage = (error, fallback) => {
+    if (!error) return fallback;
+    if (typeof error === "string") return error;
+    if (typeof error?.detail === "string") return error.detail;
+    if (typeof error?.message === "string") return error.message;
+    return fallback;
+  };
+
+  const setItemSyncing = useCallback((productoId, syncing) => {
+    const key = Number(productoId);
+    setCartSyncingIds((prev) => {
+      if (syncing) {
+        if (prev.includes(key)) return prev;
+        return [...prev, key];
+      }
+      return prev.filter((id) => id !== key);
+    });
+  }, []);
+
+  const isItemSyncing = useCallback(
+    (productoId) => cartSyncingIds.includes(Number(productoId)),
+    [cartSyncingIds]
+  );
+
   const agregarAlCarrito = async (producto, cantidad = 1) => {
     try {
-      await carritoService.agregar({
+      const data = await carritoService.agregar({
         producto_id: producto.id,
         cantidad,
       });
+      setCartActionError("");
+      if (Array.isArray(data?.items)) {
+        setCartItems(mapBackendCartItems(data.items));
+        return;
+      }
+      return;
     } catch (error) {
       console.error("Error al agregar al carrito en el backend:", error);
+      setCartActionError(getApiErrorMessage(error, "No se pudo agregar el producto al carrito."));
+      return;
+    }
+  };
+
+  const actualizarCantidadCarrito = async (productoId, delta) => {
+    if (isItemSyncing(productoId)) return;
+    const itemActual = cartItems.find((item) => Number(item.id) === Number(productoId));
+    if (!itemActual) return;
+
+    const nuevaCantidad = Number(itemActual.cantidad || 0) + Number(delta || 0);
+    if (nuevaCantidad <= 0) {
+      await eliminarItemCarrito(productoId);
+      return;
     }
 
-    setCartItems((prev) => {
-      const index = prev.findIndex((item) => Number(item.id) == Number(producto.id));
-      if (index >= 0) {
-        return prev.map((item, idx) => (idx === index ? { ...item, cantidad: item.cantidad + cantidad } : item));
-      }
-      return [
-        ...prev,
-        {
-          id: producto.id,
-          nombre_comercial: producto.nombre_comercial,
-          precio_venta: Number(producto.precio_venta || 0),
-          imagen: producto.imagen || "",
-          cantidad,
-        },
-      ];
-    });
-  };
-
-  const actualizarCantidadCarrito = (productoId, delta) => {
+    setItemSyncing(productoId, true);
+    const prevItems = cartItems;
     setCartItems((prev) =>
-      prev
-        .map((item) => {
-          if (Number(item.id) !== Number(productoId)) return item;
-          return { ...item, cantidad: item.cantidad + delta };
-        })
-        .filter((item) => item.cantidad > 0)
+      prev.map((item) => (Number(item.id) === Number(productoId) ? { ...item, cantidad: nuevaCantidad } : item))
     );
+
+    if (!itemActual.carrito_item_id) {
+      setItemSyncing(productoId, false);
+      return;
+    }
+
+    try {
+      const data = await carritoService.actualizarItem(itemActual.carrito_item_id, { cantidad: nuevaCantidad });
+      if (Array.isArray(data?.items)) {
+        setCartItems(mapBackendCartItems(data.items));
+        setCartActionError("");
+      }
+    } catch (error) {
+      console.error("Error al actualizar cantidad en carrito:", error);
+      setCartActionError(getApiErrorMessage(error, "No se pudo actualizar la cantidad del producto."));
+      setCartItems(prevItems);
+      await cargarCarritoDesdeBackend();
+    } finally {
+      setItemSyncing(productoId, false);
+    }
   };
 
-  const eliminarItemCarrito = (productoId) => {
+  const eliminarItemCarrito = async (productoId) => {
+    if (isItemSyncing(productoId)) return;
+    const itemActual = cartItems.find((item) => Number(item.id) === Number(productoId));
+    if (!itemActual) return;
+
+    setItemSyncing(productoId, true);
+    const prevItems = cartItems;
     setCartItems((prev) => prev.filter((item) => Number(item.id) !== Number(productoId)));
+
+    if (!itemActual.carrito_item_id) {
+      setItemSyncing(productoId, false);
+      return;
+    }
+
+    try {
+      const data = await carritoService.eliminarItem(itemActual.carrito_item_id);
+      if (Array.isArray(data?.items)) {
+        setCartItems(mapBackendCartItems(data.items));
+        setCartActionError("");
+      }
+    } catch (error) {
+      console.error("Error al eliminar item del carrito:", error);
+      setCartActionError(getApiErrorMessage(error, "No se pudo eliminar el producto del carrito."));
+      setCartItems(prevItems);
+      await cargarCarritoDesdeBackend();
+    } finally {
+      setItemSyncing(productoId, false);
+    }
   };
 
   const handleAuthModalClose = () => {
@@ -388,24 +506,15 @@ export default function CatalogoFarmaceutico() {
   };
 
   const cargarCarritoDesdeBackend = useCallback(async () => {
-    if (!user) return;
-    
     try {
       const data = await carritoService.listar();
       if (data && data.items) {
-        const items = data.items.map((item) => ({
-          id: item.producto,
-          nombre_comercial: item.producto_nombre || item.producto,
-          precio_venta: item.precio_unitario,
-          imagen: "",
-          cantidad: item.cantidad,
-        }));
-        setCartItems(items);
+        setCartItems(mapBackendCartItems(data.items));
       }
     } catch (error) {
       console.error("Error al cargar carrito desde backend:", error);
     }
-  }, [user]);
+  }, [mapBackendCartItems]);
 
   useEffect(() => {
     cargarCarritoDesdeBackend();
@@ -508,11 +617,11 @@ export default function CatalogoFarmaceutico() {
                   <p className="text-sm font-medium text-slate-500">Buscando productos...</p>
                 ) : queryBusqueda.trim() === "" ? (
                   <p className="text-sm font-medium text-slate-500">Escribe para buscar productos.</p>
-                ) : resultadosBusqueda.length === 0 ? (
+                ) : resultadosBusquedaPreview.length === 0 ? (
                   <p className="text-sm font-medium text-slate-500">No hay resultados.</p>
                 ) : (
                   <div className="space-y-2">
-                    {resultadosBusqueda.map((item) => {
+                    {resultadosBusquedaPreview.map((item) => {
                       const img = normalizarImagen(item.imagen);
                       return (
                         <button
@@ -521,6 +630,7 @@ export default function CatalogoFarmaceutico() {
                           onClick={() => {
                             setMostrarResultadosBusqueda(false);
                             setCategoriaActiva(item.categoria);
+                            setFiltroCategoriaBusqueda(String(item.categoria));
                             setSubcategoriaActiva(item.subcategoria || null);
                             setQueryBusqueda(item.nombre_comercial || "");
                             setShowBusquedaPanel(false);
@@ -548,10 +658,10 @@ export default function CatalogoFarmaceutico() {
                     type="button"
                     onClick={() => {
                       setMostrarResultadosBusqueda(true);
-                      setCategoriaActiva(null);
+                      setCategoriaActiva(filtroCategoriaBusqueda === "all" ? null : Number(filtroCategoriaBusqueda));
                       setSubcategoriaActiva(null);
                       setCategoriaPaginaActiva(0);
-                      setProductoPaginaActiva(0);
+                      setProductoPaginaActiva(1);
                       setShowBusquedaPanel(false);
                     }}
                     className="text-sm font-semibold text-sky-700 hover:text-sky-800"
@@ -648,14 +758,14 @@ export default function CatalogoFarmaceutico() {
             <p className="text-sm font-semibold text-slate-500">Cargando productos...</p>
           ) : errorProductos ? (
             <p className="text-sm font-semibold text-rose-600">{errorProductos}</p>
-          ) : productosBase.length === 0 ? (
+          ) : paginaProductosActual.length === 0 ? (
             <p className="text-sm font-semibold text-slate-500">No hay productos para esta seleccion.</p>
           ) : (
             <div className="flex items-center justify-center gap-2">
               <button
                 type="button"
-                onClick={() => setProductoPaginaActiva((prev) => Math.max(0, prev - 1))}
-                disabled={productoPaginaActiva === 0}
+                onClick={() => setProductoPaginaActiva((prev) => Math.max(1, prev - 1))}
+                disabled={productoPaginaActiva <= 1}
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-black text-slate-600 hover:border-sky-300"
                 aria-label="Desplazar productos a la izquierda"
               >
@@ -679,8 +789,28 @@ export default function CatalogoFarmaceutico() {
                     return (
                       <article key={producto.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                         <div className="mb-3 space-y-2">
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-between">
                             <Badge label={badgeInfo.label} tone={badgeInfo.tone} />
+                            {stockActual > 0 ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-teal-200 bg-teal-50 text-teal-700 transition-colors hover:bg-teal-100"
+                                aria-label="Agregar al carrito"
+                                title="Agregar al carrito"
+                                onClick={() => {
+                                  if (!user) {
+                                    setShowAuthModal(true);
+                                    return;
+                                  }
+                                  agregarAlCarrito(producto);
+                                  setShowCartPanel(true);
+                                }}
+                              >
+                                <CartIcon className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <span className="inline-flex h-8 w-8" aria-hidden="true" />
+                            )}
                           </div>
                           {imagenSrc ? (
                             <div className="h-24 w-full overflow-hidden rounded-xl border border-slate-100 bg-white">
@@ -705,8 +835,8 @@ export default function CatalogoFarmaceutico() {
               </div>
               <button
                 type="button"
-                onClick={() => setProductoPaginaActiva((prev) => Math.min(productosPaginados.length - 1, prev + 1))}
-                disabled={productoPaginaActiva >= productosPaginados.length - 1}
+                onClick={() => setProductoPaginaActiva((prev) => Math.min(totalPaginasProductos, prev + 1))}
+                disabled={!hayPaginaSiguiente}
                 className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-black text-slate-600 hover:border-sky-300"
                 aria-label="Desplazar productos a la derecha"
               >
@@ -734,17 +864,43 @@ export default function CatalogoFarmaceutico() {
                   </div>
                   <div className="mt-2 flex items-center justify-between">
                     <div className="inline-flex items-center rounded-md border border-slate-300 bg-white">
-                      <button type="button" onClick={() => actualizarCantidadCarrito(item.id, -1)} className="px-2 py-0.5 text-sm font-black text-slate-700">-</button>
+                      <button
+                        type="button"
+                        onClick={() => actualizarCantidadCarrito(item.id, -1)}
+                        disabled={isItemSyncing(item.id)}
+                        className="px-2 py-0.5 text-sm font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        -
+                      </button>
                       <span className="px-2 text-xs font-bold text-slate-700">{item.cantidad}</span>
-                      <button type="button" onClick={() => actualizarCantidadCarrito(item.id, 1)} className="px-2 py-0.5 text-sm font-black text-slate-700">+</button>
+                      <button
+                        type="button"
+                        onClick={() => actualizarCantidadCarrito(item.id, 1)}
+                        disabled={isItemSyncing(item.id)}
+                        className="px-2 py-0.5 text-sm font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        +
+                      </button>
                     </div>
-                    <button type="button" onClick={() => eliminarItemCarrito(item.id)} className="text-xs font-bold text-rose-600 hover:text-rose-700">Quitar</button>
+                    <button
+                      type="button"
+                      onClick={() => eliminarItemCarrito(item.id)}
+                      disabled={isItemSyncing(item.id)}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Quitar
+                    </button>
                   </div>
                 </div>
               ))
             )}
           </div>
           <div className="space-y-1 border-t border-slate-200 bg-slate-50 p-3 text-sm">
+            {cartActionError ? (
+              <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">
+                {cartActionError}
+              </p>
+            ) : null}
             <div className="flex items-center justify-between font-medium text-slate-600">
               <span>Subtotal</span>
               <span>{formatPrecio(subtotalCarrito)}</span>
@@ -777,6 +933,12 @@ export default function CatalogoFarmaceutico() {
       {detalleProducto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div ref={detalleModalRef} className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5">
+            {(() => {
+              const stockDetalle = Number(detalleProducto?.inventario?.stock_actual ?? 0);
+              const cantidadEnCarritoDetalle = getCantidadEnCarrito(detalleProducto?.id);
+              const puedeAgregarDetalle = stockDetalle - cantidadEnCarritoDetalle > 0;
+              return (
+                <>
             <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-bold text-slate-500">
                 Inventario &gt; {detalleProducto.categoria_nombre} &gt; <span className="text-slate-800">{detalleProducto.nombre_comercial}</span>
@@ -823,24 +985,30 @@ export default function CatalogoFarmaceutico() {
                   </div>
                   <div className="mt-4 space-y-2">
                     <Button
-                      className="h-12 w-full bg-teal-700 text-base font-extrabold hover:bg-teal-600"
+                      className="h-12 w-full bg-teal-700 text-base font-extrabold hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!puedeAgregarDetalle}
                       onClick={() => {
+                        if (!puedeAgregarDetalle) return;
                         if (!user) {
                           setShowAuthModal(true);
                         } else {
                           agregarAlCarrito(detalleProducto);
                           setShowCartPanel(true);
+                          closeDetalleProducto();
                         }
                       }}
                     >
                       Agregar al carrito
                     </Button>
-                    <Button variant="outline" className="h-12 w-full border-slate-300 text-base font-extrabold" 
+                    <Button variant="outline" className="h-12 w-full border-slate-300 text-base font-extrabold disabled:cursor-not-allowed disabled:opacity-50" 
+                    disabled={!puedeAgregarDetalle}
                     onClick={async () => {
+                      if (!puedeAgregarDetalle) return;
                       if (!user) {
                         setShowAuthModal(true);
                       } else {
                         await agregarAlCarrito(detalleProducto);
+                        closeDetalleProducto();
                         navigate("/checkout", {
                           state: {
                             items: cartItems,
@@ -867,6 +1035,9 @@ export default function CatalogoFarmaceutico() {
                 </div>
               </div>
             </div>
+                </>
+              );
+            })()}
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-slate-200 p-3">
