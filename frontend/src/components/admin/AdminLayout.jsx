@@ -14,6 +14,7 @@ import {
   UserIcon,
   UsersGroupIcon,
   SaveIcon,                     // ← Para la sección de backups
+  SparkIcon,
 } from "../ui/Icons";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 import { useAuth } from "../../context/AuthContext";
@@ -156,6 +157,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     reports: ChartBarIcon,
     finance: DollarIcon,
     settings: CogIcon,
+    spark: SparkIcon,
     pos: DollarIcon,            // ← Sección de punto de venta
     backup: SaveIcon,           // ← Sección de backups
   };

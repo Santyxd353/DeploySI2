@@ -58,6 +58,7 @@ TENANT_APPS = [
     "carrito",
     "predicciones",
     "reportes",
+    "puntos.apps.PuntosConfig",
 ]
 
 INSTALLED_APPS = SHARED_APPS + [app for app in TENANT_APPS if app not in SHARED_APPS]

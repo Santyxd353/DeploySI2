@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/predicciones/", include("predicciones.urls")),
     path("api/reportes/", include("reportes.urls")),
     path("api/tenants/", include("tenants.urls")),
+    path("api/puntos/", include("puntos.urls")),
 ]
 
 if settings.DEBUG:

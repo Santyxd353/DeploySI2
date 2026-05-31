@@ -18,6 +18,7 @@ const AdminProductosPage = lazy(() => import("./pages/admin/AdminProductosPage")
 const AdminLaboratariosPage = lazy(() => import("./pages/admin/AdminLaboratoriosPage"));
 const AdminCategoriasPage = lazy(() => import("./pages/admin/AdminCategoriasPage"));
 const AdminClientesPage = lazy(() => import("./pages/admin/AdminClientesPage"));
+const AdminPuntosPage = lazy(() => import("./pages/admin/AdminPuntosPage"));
 const RecetasPage = lazy(() => import("./pages/admin/RecetasPage"));
 const AdminBitacoraPage = lazy(() => import("./pages/admin/AdminBitacoraPage"));
 const AdminBackupsPage = lazy(() => import("./pages/admin/AdminBackupsPage"));
@@ -75,6 +76,7 @@ function App() {
               <Route path="/admin/categorias" element={<AdminCategoriasPage />} />
               <Route path="/admin/laboratorios" element={<AdminLaboratariosPage />} />
               <Route path="/admin/clientes" element={<AdminClientesPage />} />
+              <Route path="/admin/puntos" element={<AdminPuntosPage />} />
               <Route path="/admin/recetas" element={<RecetasPage />} />
               <Route path="/admin/bitacora" element={<AdminBitacoraPage />} />
               <Route path="/admin/backups" element={<AdminBackupsPage />} />

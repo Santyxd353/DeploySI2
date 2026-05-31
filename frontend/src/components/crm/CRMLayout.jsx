@@ -8,6 +8,7 @@ import {
   HistoryIcon,
   LogOutIcon,
   ShieldIcon,
+  SparkIcon,
   UserIcon,
   UsersGroupIcon,
 } from "../ui/Icons";
@@ -54,6 +55,14 @@ const CRM_SECTIONS = [
     icon: ChartBarIcon,
     path: null,
     available: false,
+  },
+  {
+    id: "puntos",
+    label: "Puntos",
+    description: "Fidelidad y canjes",
+    icon: SparkIcon,
+    path: "/admin/puntos",
+    available: true,
   },
 ];
 
