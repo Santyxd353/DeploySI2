@@ -14,4 +14,12 @@ app.conf.beat_schedule = {
         'task': 'backup.tasks.check_and_trigger_backups',
         'schedule': 60.0,
     },
+    'notificar-tomas-proximas-cada-minuto': {
+        'task': 'tratamientos.tasks.notificar_tomas_proximas',
+        'schedule': 60.0,
+    },
+    'cierre-diario-tratamientos': {
+        'task': 'tratamientos.tasks.cierre_diario_tratamientos',
+        'schedule': crontab(minute=0, hour=0),
+    },
 }

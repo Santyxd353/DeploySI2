@@ -26,6 +26,7 @@ from .models import (
     LoteProducto,
     MovimientoInventario,
     EntradaStock,
+    LimiteDispensacion,
 )
 from .serializers import (
     CategoriaSerializer,
@@ -36,6 +37,7 @@ from .serializers import (
     LoteProductoSerializer,
     MovimientoInventarioSerializer,
     EntradaStockSerializer,
+    LimiteDispensacionSerializer,
 )
 
 
@@ -264,6 +266,15 @@ class ProductoViewSet(viewsets.ModelViewSet):
             )
         elif stock_estado == "disponible":
             queryset = queryset.filter(inventario__stock_actual__gt=F("stock_minimo"))
+
+        # Filtro específico para catálogo WEB:
+        # oculta productos que tengan lotes comercialmente no vendibles.
+        visible_web = self.request.query_params.get("visible_web")
+        if visible_web is not None and visible_web.lower() == "true":
+            queryset = queryset.exclude(
+                lotes__estado__in=["bloqueado", "vencido"],
+                lotes__cantidad_disponible__gt=0,
+            ).distinct()
 
         return queryset
 
@@ -608,11 +619,11 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return super().get_queryset().select_related("producto", "usuario", "lote").order_by("-created_at")
 
-    def _confirmar_entrada(self, entrada, usuario):
-        if entrada.estado == "confirmada":
-            return
+    def _confirmar_entrada(self, entrada, usuario, force=False):
         if entrada.estado == "anulada":
             raise StockServiceError("No se puede confirmar una entrada anulada.")
+        if entrada.estado == "confirmada" and not force:
+            return
 
         stock_aumentar_stock(
             producto=entrada.producto,
@@ -633,6 +644,8 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(usuario=self.request.user)
+        if instance.estado == "confirmada":
+            self._confirmar_entrada(instance, self.request.user, force=True)
         log_system_event(
             request=self.request,
             accion="ENTRADA_STOCK",
@@ -647,7 +660,7 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         estado_anterior = serializer.instance.estado
         instance = serializer.save()
         if estado_anterior != "confirmada" and instance.estado == "confirmada":
-            self._confirmar_entrada(instance, self.request.user)
+            self._confirmar_entrada(instance, self.request.user, force=True)
         log_system_event(
             request=self.request,
             accion="UPDATE",
@@ -710,4 +723,100 @@ class EntradaStockViewSet(viewsets.ModelViewSet):
         entradas = self.get_queryset()[:10]
         serializer = self.get_serializer(entradas, many=True)
         return Response(serializer.data)
+
+
+class LimiteDispensacionViewSet(viewsets.ModelViewSet):
+    """CRUD de límites de dispensación. Solo admin y farmacéuticos pueden gestionar."""
+
+    queryset = LimiteDispensacion.objects.select_related("producto").all()
+    serializer_class = LimiteDispensacionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        from core.rbac import obtener_rol_usuario, ROLE_ADMIN, ROLE_FARMACEUTICO
+
+        if self.action in ["list", "retrieve", "por_producto"]:
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+
+    def _check_gestion_permission(self, request):
+        from core.rbac import tiene_permiso, obtener_rol_usuario, ROLE_ADMIN, ROLE_FARMACEUTICO
+
+        tenant = getattr(request, "tenant", None)
+        if request.user.is_superuser:
+            return True
+        if not tiene_permiso(request.user, "productos.gestionar", tenant=tenant):
+            return False
+        return True
+
+    def create(self, request, *args, **kwargs):
+        if not self._check_gestion_permission(request):
+            return Response(
+                {"detail": "No tienes permiso para configurar límites de dispensación."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        log_system_event(
+            request=request,
+            accion="CREATE",
+            modulo="inventarios",
+            resultado="SUCCESS",
+            mensaje=f"Límite de dispensación creado para '{instance.producto.nombre_comercial}': máx {instance.cantidad_maxima} u. / {instance.periodo_dias} días.",
+            entidad="LimiteDispensacion",
+            entidad_id=str(instance.id),
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        if not self._check_gestion_permission(request):
+            return Response(
+                {"detail": "No tienes permiso para modificar límites de dispensación."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        updated = serializer.save()
+        log_system_event(
+            request=request,
+            accion="UPDATE",
+            modulo="inventarios",
+            resultado="SUCCESS",
+            mensaje=f"Límite de dispensación actualizado para '{updated.producto.nombre_comercial}': máx {updated.cantidad_maxima} u. / {updated.periodo_dias} días.",
+            entidad="LimiteDispensacion",
+            entidad_id=str(updated.id),
+        )
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        if not self._check_gestion_permission(request):
+            return Response(
+                {"detail": "No tienes permiso para eliminar límites de dispensación."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        instance = self.get_object()
+        nombre = instance.producto.nombre_comercial
+        instance_id = instance.id
+        instance.delete()
+        log_system_event(
+            request=request,
+            accion="DELETE",
+            modulo="inventarios",
+            resultado="SUCCESS",
+            mensaje=f"Límite de dispensación eliminado para '{nombre}'.",
+            entidad="LimiteDispensacion",
+            entidad_id=str(instance_id),
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["get"], url_path="por-producto/(?P<producto_id>[0-9]+)")
+    def por_producto(self, request, producto_id=None):
+        try:
+            limite = LimiteDispensacion.objects.select_related("producto").get(producto_id=producto_id)
+            return Response(self.get_serializer(limite).data)
+        except LimiteDispensacion.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
 

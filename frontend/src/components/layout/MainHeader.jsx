@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { navItems } from "../../data/homeData";
-import { CartIcon, ChevronDownIcon, LogOutIcon, MapPinIcon, SearchIcon, StoreIcon, UserIcon } from "../ui/Icons";
+import { CartIcon, ChevronDownIcon, LogOutIcon, MapPinIcon, SearchIcon, SparkIcon, StoreIcon, UserIcon } from "../ui/Icons";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 
-export default function MainHeader({ isAuthenticated, user, onLoginClick, onRegisterClick, onLogoutClick, onProfileClick, onCartClick }) {
+export default function MainHeader({ isAuthenticated, user, onLoginClick, onRegisterClick, onLogoutClick, onProfileClick, onCartClick, onOpinionClick }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
 
@@ -43,6 +43,17 @@ export default function MainHeader({ isAuthenticated, user, onLoginClick, onRegi
             <MapPinIcon className="h-4 w-4" />
             Sucursales
           </Button>
+          {isAuthenticated && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onOpinionClick}
+              className="border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+            >
+              <SparkIcon className="h-4 w-4" />
+              Opinar
+            </Button>
+          )}
           {isAuthenticated ? (
             <div className="relative" ref={userMenuRef}>
               <button

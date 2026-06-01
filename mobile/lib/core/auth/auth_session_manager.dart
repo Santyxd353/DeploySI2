@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/data/models/auth_user.dart';
+import '../../features/treatments/data/notification_service.dart';
 
 class AuthSessionManager {
   AuthSessionManager._();
@@ -19,6 +20,10 @@ class AuthSessionManager {
     await prefs.setString(_keyAccess, session.accessToken);
     await prefs.setString(_keyRefresh, session.refreshToken);
     await prefs.setString(_keyUser, jsonEncode(session.user.toJson()));
+
+    await TreatmentNotificationService.instance.syncPushToken(
+      accessToken: session.accessToken,
+    );
   }
 
   static Future<void> clearSession() async {
@@ -44,6 +49,10 @@ class AuthSessionManager {
         await clearSession();
         return null;
       }
+
+      await TreatmentNotificationService.instance.syncPushToken(
+        accessToken: access,
+      );
 
       return AuthSession(
         accessToken: access,
@@ -107,6 +116,9 @@ class AuthSessionManager {
     final access = await getAccessToken();
     if (access != null) {
       try {
+        await TreatmentNotificationService.instance.deactivatePushTokens(
+          accessToken: access,
+        );
         await _authService.logout(accessToken: access);
       } catch (_) {
         // Session cleanup must continue even if backend logout fails.

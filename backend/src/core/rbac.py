@@ -27,6 +27,8 @@ PERMISOS_CATALOGO = {
     "ventas.ver": "Puede ver ventas",
     "ventas.gestionar": "Puede gestionar ventas",
     "reportes.ver": "Puede ver reportes",
+    "tratamientos.ver": "Puede ver tratamientos",
+    "tratamientos.gestionar": "Puede gestionar tratamientos",
     "clientes.ver": "Puede ver clientes",
     "clientes.gestionar": "Puede gestionar clientes",
     "categorias.ver": "Puede ver categorias",
@@ -35,11 +37,16 @@ PERMISOS_CATALOGO = {
     "subcategorias.gestionar": "Puede gestionar subcategorias",
     "laboratorios.ver": "Puede ver laboratorios",
     "laboratorios.gestionar": "Puede gestionar laboratorios",
+    "opiniones.ver": "Puede ver opiniones",
+    "opiniones.gestionar": "Puede gestionar opiniones",
+    "publicidad.ver": "Puede ver campañas publicitarias",
+    "publicidad.gestionar": "Puede gestionar campañas publicitarias",
 }
 
 PERMISOS_ROL = {
     ROLE_ADMIN: set(PERMISOS_CATALOGO.keys()),
     ROLE_FARMACEUTICO: {
+        "publicidad.ver",
         "productos.ver",
         "productos.gestionar",
         "inventario.ver",
@@ -50,6 +57,8 @@ PERMISOS_ROL = {
         "ventas.ver",
         "ventas.gestionar",
         "reportes.ver",
+        "tratamientos.ver",
+        "tratamientos.gestionar",
         "clientes.ver",
         "categorias.ver",
         "categorias.gestionar",
@@ -57,6 +66,8 @@ PERMISOS_ROL = {
         "subcategorias.gestionar",
         "laboratorios.ver",
         "laboratorios.gestionar",
+        "opiniones.ver",
+        "opiniones.gestionar",
     },
     ROLE_CAJERO: {
         "productos.ver",
@@ -65,11 +76,13 @@ PERMISOS_ROL = {
         "ventas.ver",
         "ventas.gestionar",
         "reportes.ver",
+        "tratamientos.ver",
         "clientes.ver",
         "clientes.gestionar",
         "categorias.ver",
-        "subcategorias.ver",   
-        "laboratorios.ver",     
+        "subcategorias.ver",
+        "laboratorios.ver",
+        "opiniones.ver",
     },
     ROLE_CLIENTE: set(),
 }
@@ -228,9 +241,12 @@ def puede_acceder_backoffice(user, tenant=None):
             "pedidos.ver",
             "ventas.ver",
             "reportes.ver",
+            "tratamientos.ver",
             "clientes.ver",
             "categorias.ver",
-            "laboratorios.ver"
+            "laboratorios.ver",
+            "opiniones.ver",
+            "publicidad.ver",
         ]
     )
 

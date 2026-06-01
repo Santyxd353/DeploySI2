@@ -17,6 +17,8 @@ dist/
 
 # Local uploads / generated media
 backend/src/media/
+backend/src/config/firebase-service-account*.json
+backend/src/config/*firebase-adminsdk*.json
 run-logs/
 .local-pgdata/
 
@@ -29,3 +31,4 @@ Thumbs.db
 # Flutter
 **/.dart_tool/
 **/build/
+*.hprof

@@ -10,34 +10,40 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    final response = await _apiClient.post(
-      '/api/auth/login/',
-      body: {'email': email.trim(), 'password': password},
-    );
-
-    final data = _apiClient.parseJsonMap(response);
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AuthServiceException(
-        _extractDetail(data, fallback: 'No se pudo iniciar sesion.'),
+    try {
+      final response = await _apiClient.post(
+        '/api/auth/login/',
+        body: {'email': email.trim(), 'password': password},
       );
+
+      final data = _apiClient.parseJsonMap(response);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw AuthServiceException(
+          _extractDetail(data, fallback: 'No se pudo iniciar sesion.'),
+        );
+      }
+
+      final access = (data['access'] as String? ?? '').trim();
+      final refresh = (data['refresh'] as String? ?? '').trim();
+      final userJson = data['user'];
+
+      if (access.isEmpty ||
+          refresh.isEmpty ||
+          userJson is! Map<String, dynamic>) {
+        throw const AuthServiceException('Respuesta invalida del servidor.');
+      }
+
+      return AuthSession(
+        accessToken: access,
+        refreshToken: refresh,
+        user: AuthUser.fromJson(userJson),
+      );
+    } on AuthServiceException {
+      rethrow;
+    } catch (error) {
+      throw AuthServiceException(_mapNetworkOrUnexpectedError(error));
     }
-
-    final access = (data['access'] as String? ?? '').trim();
-    final refresh = (data['refresh'] as String? ?? '').trim();
-    final userJson = data['user'];
-
-    if (access.isEmpty ||
-        refresh.isEmpty ||
-        userJson is! Map<String, dynamic>) {
-      throw const AuthServiceException('Respuesta invalida del servidor.');
-    }
-
-    return AuthSession(
-      accessToken: access,
-      refreshToken: refresh,
-      user: AuthUser.fromJson(userJson),
-    );
   }
 
   Future<void> register({
@@ -204,6 +210,23 @@ class AuthService {
     }
 
     return fallback;
+  }
+
+  String _mapNetworkOrUnexpectedError(Object error) {
+    final text = error.toString().toLowerCase();
+
+    if (text.contains('failed host lookup') ||
+        text.contains('connection refused') ||
+        text.contains('socketexception') ||
+        text.contains('timed out')) {
+      return 'No hay conexion con el servidor. Verifica API_BASE_URL, que el backend este encendido y que el telefono este en la misma red.';
+    }
+
+    if (text.contains('xmlhttprequest error') || text.contains('clientexception')) {
+      return 'No se pudo conectar al backend. Revisa la URL de API y la red del dispositivo.';
+    }
+
+    return 'No se pudo iniciar sesion. Intenta nuevamente.';
   }
 }
 

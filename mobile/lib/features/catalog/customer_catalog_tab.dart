@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../../core/auth/auth_session_manager.dart';
 import '../../core/config/app_config.dart';
@@ -22,6 +26,47 @@ class CustomerCatalogTab extends StatefulWidget {
 class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
   final ApiClient _apiClient = ApiClient();
   final CartService _cartService = CartService();
+  final AudioRecorder _audioRecorder = AudioRecorder();
+
+  static const Map<String, String> _wordFixes = {
+    'parasetamo': 'paracetamol',
+    'amoxisilina': 'amoxicilina',
+    'iboprufeno': 'ibuprofeno',
+    'loratadinaa': 'loratadina',
+    'cetiricina': 'cetirizina',
+    'omeprazool': 'omeprazol',
+    'dicloflenaco': 'diclofenaco',
+    'naprosodeno': 'naproxeno',
+    'vit c': 'vitamina c',
+    'b 12': 'b12',
+  };
+
+  static const Map<String, List<String>> _semanticAliases = {
+    'analgesico': ['dolor', 'analgesico', 'paracetamol', 'diclofenaco', 'naproxeno'],
+    'antiinflamatorio': ['antiinflamatorio', 'inflamacion', 'ibuprofeno', 'diclofenaco', 'naproxeno'],
+    'alergia': ['alergia', 'antihistaminico', 'loratadina', 'cetirizina'],
+    'acidez': ['acidez', 'gastritis', 'reflujo', 'omeprazol', 'ranitidina'],
+    'inmunidad': ['inmune', 'inmunidad', 'vitamina c', 'acido ascorbico'],
+    'diabetes': ['diabetes', 'glucemia', 'metformina'],
+    'energia': ['energia', 'metabolismo', 'b12', 'cianocobalamina', 'multivitaminico'],
+    'piel': ['piel', 'hidratante', 'locion', 'crema'],
+  };
+
+  static const Map<String, List<String>> _activeIngredientAliases = {
+    'acido ascorbico': ['vitamina c', 'acido ascorbico'],
+    'cianocobalamina': ['vitamina b12', 'b12', 'cianocobalamina'],
+    'diclofenaco sodico': ['diclofenaco', 'diclofenaco sodico'],
+    'naproxeno sodico': ['naproxeno', 'naproxeno sodico', 'naprosodeno'],
+    'paracetamol': ['paracetamol'],
+    'ibuprofeno': ['ibuprofeno'],
+    'amoxicilina': ['amoxicilina'],
+    'omeprazol': ['omeprazol'],
+    'loratadina': ['loratadina'],
+    'cetirizina': ['cetirizina'],
+    'ciprofloxacino': ['ciprofloxacino'],
+    'ranitidina': ['ranitidina'],
+    'metformina': ['metformina'],
+  };
 
   List<dynamic> _categorias = [
     {'id': null, 'nombre': 'Todas las categorías'},
@@ -36,6 +81,9 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
   bool _isLoading = true;
   String _error = '';
   int? _addingProductId;
+  bool _recordingVoice = false;
+  bool _processingVoice = false;
+  String _lastVoiceTranscription = '';
 
   @override
   void initState() {
@@ -47,7 +95,256 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _audioRecorder.dispose();
     super.dispose();
+  }
+
+  String _normalizeText(String value) {
+    const accentMap = {
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'ü': 'u',
+      'ñ': 'n',
+    };
+    final lower = value.toLowerCase().trim();
+    final buffer = StringBuffer();
+    for (final ch in lower.split('')) {
+      buffer.write(accentMap[ch] ?? ch);
+    }
+
+    final normalized = buffer.toString();
+    final compactUnits = normalized
+        .replaceAllMapped(RegExp(r'(\d+)\s*mg\b'), (m) => '${m.group(1)} mg')
+        .replaceAllMapped(RegExp(r'(\d+)\s*mcg\b'), (m) => '${m.group(1)} mcg')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final words = compactUnits.split(' ').where((w) => w.isNotEmpty).toList();
+    final fixedWords = words.map((w) => _wordFixes[w] ?? w).toList();
+    return fixedWords.join(' ');
+  }
+
+  Set<String> _expandQueryTokens(String normalizedQuery) {
+    final tokens = normalizedQuery.split(' ').where((t) => t.isNotEmpty).toSet();
+    final expanded = <String>{...tokens};
+
+    final fullQuery = normalizedQuery;
+    for (final entry in _activeIngredientAliases.entries) {
+      final key = entry.key;
+      final aliases = entry.value;
+      if (aliases.any((alias) => fullQuery.contains(alias))) {
+        expanded.add(key);
+        expanded.addAll(aliases);
+      }
+    }
+
+    for (final token in tokens) {
+      final semantic = _semanticAliases[token];
+      if (semantic != null) {
+        expanded.addAll(semantic);
+      }
+    }
+
+    return expanded;
+  }
+
+  String _productSearchDocument(Map<String, dynamic> p) {
+    final comercial = _normalizeText(p['nombre_comercial']?.toString() ?? '');
+    final generico = _normalizeText(p['nombre_generico']?.toString() ?? '');
+    final laboratorio = _normalizeText(p['laboratorio_nombre']?.toString() ?? '');
+    final descripcion = _normalizeText(p['descripcion']?.toString() ?? '');
+    final presentacion = _normalizeText(p['presentacion']?.toString() ?? '');
+    final forma = _normalizeText(p['forma_farmaceutica']?.toString() ?? '');
+
+    return [comercial, generico, laboratorio, descripcion, presentacion, forma]
+        .where((segment) => segment.isNotEmpty)
+        .join(' ');
+  }
+
+  int _searchScore(Map<String, dynamic> p, String query) {
+    if (query.isEmpty) return 0;
+
+    final comercial = _normalizeText(p['nombre_comercial']?.toString() ?? '');
+    final generico = _normalizeText(p['nombre_generico']?.toString() ?? '');
+    final laboratorio = _normalizeText(p['laboratorio_nombre']?.toString() ?? '');
+    final descripcion = _normalizeText(p['descripcion']?.toString() ?? '');
+    final presentacion = _normalizeText(p['presentacion']?.toString() ?? '');
+    final document = _productSearchDocument(p);
+
+    final queryTokens = _expandQueryTokens(query);
+    var score = 0;
+
+    if (comercial == query || generico == query) {
+      score += 120;
+    }
+    if (comercial.contains(query)) {
+      score += 70;
+    }
+    if (generico.contains(query)) {
+      score += 75;
+    }
+    if (laboratorio.contains(query)) {
+      score += 35;
+    }
+    if (descripcion.contains(query)) {
+      score += 30;
+    }
+
+    for (final token in queryTokens) {
+      if (token.isEmpty) {
+        continue;
+      }
+
+      if (comercial.startsWith(token)) {
+        score += 22;
+      }
+      if (comercial.contains(token)) {
+        score += 16;
+      }
+      if (generico.contains(token)) {
+        score += 20;
+      }
+      if (laboratorio.contains(token)) {
+        score += 12;
+      }
+      if (presentacion.contains(token)) {
+        score += 10;
+      }
+      if (descripcion.contains(token)) {
+        score += 9;
+      }
+      if (document.contains(token)) {
+        score += 4;
+      }
+    }
+
+    return score;
+  }
+
+  int? _findCategoriaIdByVoiceText(String categoriaText) {
+    final normalizedNeedle = _normalizeText(categoriaText);
+    for (final cat in _categorias) {
+      final dynamic rawId = cat['id'];
+      final normalizedName = _normalizeText(cat['nombre']?.toString() ?? '');
+      if (normalizedName.isEmpty) {
+        continue;
+      }
+      if (normalizedName.contains(normalizedNeedle) || normalizedNeedle.contains(normalizedName)) {
+        return rawId is int ? rawId : null;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _toggleVoiceSearch() async {
+    if (_processingVoice) {
+      return;
+    }
+
+    if (_recordingVoice) {
+      await _stopAndApplyVoiceSearch();
+      return;
+    }
+
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay permiso de micrófono.'), behavior: SnackBarBehavior.floating),
+      );
+      return;
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final filePath = '${tempDir.path}/catalog_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 96000,
+        sampleRate: 16000,
+      ),
+      path: filePath,
+    );
+
+    if (!mounted) return;
+    setState(() => _recordingVoice = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Grabando... toca de nuevo el micrófono para buscar.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _stopAndApplyVoiceSearch() async {
+    setState(() => _recordingVoice = false);
+    final filePath = await _audioRecorder.stop();
+    if (filePath == null || filePath.isEmpty) {
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _processingVoice = true);
+
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      final token = widget.accessToken ?? await AuthSessionManager.getAccessToken();
+      final result = await _cartService.buscarPorAudio(
+        audioBytes: Uint8List.fromList(bytes),
+        filename: 'catalogo_busqueda.m4a',
+        accessToken: token,
+      );
+
+      final transcripcion = (result['transcripcion'] ?? '').toString();
+      final interpretacion = (result['interpretacion'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+      final intent = (interpretacion['intent'] ?? '').toString();
+      final query = (interpretacion['query'] ?? '').toString();
+      final categoria = (interpretacion['categoria'] ?? '').toString();
+
+      if (!mounted) return;
+      setState(() => _lastVoiceTranscription = transcripcion);
+
+      if (intent == 'search_text' && query.isNotEmpty) {
+        _searchController.text = query;
+        _searchQuery = query;
+        _showSuggestions = false;
+        _aplicarFiltros();
+      } else if (intent == 'filter_category' && categoria.isNotEmpty) {
+        final categoryId = _findCategoriaIdByVoiceText(categoria);
+        if (categoryId == null && _normalizeText(categoria) != 'todas las categorias') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No encontré la categoría "$categoria".'), behavior: SnackBarBehavior.floating),
+          );
+        } else {
+          setState(() => _categoriaSeleccionadaId = categoryId);
+          _aplicarFiltros();
+        }
+      } else if (intent == 'clear_filters') {
+        _searchController.clear();
+        _searchQuery = '';
+        setState(() {
+          _categoriaSeleccionadaId = null;
+          _showSuggestions = false;
+        });
+        _aplicarFiltros();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No entendí el comando de búsqueda.'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error en búsqueda por voz: $e'), behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _processingVoice = false);
+      }
+    }
   }
 
   String _normalizeBackendUrl(String url) {
@@ -118,14 +415,38 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
   }
 
   void _aplicarFiltros() {
+    final normalizedQuery = _normalizeText(_searchQuery);
+
     setState(() {
-      _productosFiltrados = _productosTodos.where((p) {
-        final bool pasaCategoria = _categoriaSeleccionadaId == null || p['categoria'] == _categoriaSeleccionadaId;
-        final String nombreComercial = (p['nombre_comercial'] ?? '').toString().toLowerCase();
-        final String nombreGenerico = (p['nombre_generico'] ?? '').toString().toLowerCase();
-        final String query = _searchQuery.toLowerCase();
-        return pasaCategoria && (query.isEmpty || nombreComercial.contains(query) || nombreGenerico.contains(query));
+      final filteredByCategory = _productosTodos.where((p) {
+        return _categoriaSeleccionadaId == null || p['categoria'] == _categoriaSeleccionadaId;
       }).toList();
+
+      if (normalizedQuery.isEmpty) {
+        _productosFiltrados = filteredByCategory;
+        return;
+      }
+
+      final ranked = <Map<String, dynamic>>[];
+      for (final raw in filteredByCategory) {
+        final p = raw as Map<String, dynamic>;
+        final score = _searchScore(p, normalizedQuery);
+        if (score > 0) {
+          ranked.add({'producto': p, 'score': score});
+        }
+      }
+
+      ranked.sort((a, b) {
+        final scoreCompare = (b['score'] as int).compareTo(a['score'] as int);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        final an = _normalizeText((a['producto'] as Map<String, dynamic>)['nombre_comercial']?.toString() ?? '');
+        final bn = _normalizeText((b['producto'] as Map<String, dynamic>)['nombre_comercial']?.toString() ?? '');
+        return an.compareTo(bn);
+      });
+
+      _productosFiltrados = ranked.map((e) => e['producto']).toList();
     });
   }
 
@@ -200,7 +521,7 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
               border: Border.all(color: const Color(0xFFD0D7DE)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -300,17 +621,61 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
                     borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
                   ),
                   child: IconButton(
-                    tooltip: 'Buscar',
-                    onPressed: () {
-                      _searchFocusNode.unfocus();
-                      setState(() => _showSuggestions = false);
-                    },
-                    icon: const Icon(Icons.search_rounded, color: Color(0xFF344054), size: 25),
+                    tooltip: _processingVoice
+                        ? 'Procesando audio...'
+                        : _recordingVoice
+                            ? 'Detener y buscar'
+                            : 'Buscar por voz',
+                    onPressed: _processingVoice ? null : _toggleVoiceSearch,
+                    icon: _processingVoice
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _recordingVoice ? Icons.stop_rounded : Icons.mic_rounded,
+                            color: _recordingVoice ? const Color(0xFFBA1A1A) : const Color(0xFF344054),
+                            size: 25,
+                          ),
                   ),
                 ),
               ],
             ),
           ),
+          if (_processingVoice)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Procesando audio, por favor espera...',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6F7977),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_lastVoiceTranscription.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Transcripción: $_lastVoiceTranscription',
+                  style: GoogleFonts.manrope(fontSize: 12, color: const Color(0xFF6F7977), fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
           if (_showSuggestions) _buildSearchSuggestions(),
         ],
       ),
@@ -328,7 +693,7 @@ class _CustomerCatalogTabState extends State<CustomerCatalogTab> {
         border: Border.all(color: const Color(0xFFE0E3E1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -522,7 +887,7 @@ class _ProductCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE0E3E1)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -553,7 +918,7 @@ class _ProductCard extends StatelessWidget {
                   if (!hasStock)
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.black.withValues(alpha: 0.4),
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                       ),
                       child: const Center(

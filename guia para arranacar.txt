@@ -174,7 +174,7 @@ Luego prueba el frontend:
 
 16. Flujo recomendado de prueba
 - Entra con el superusuario global para revisar el panel SaaS.
-- Entra a `farmacia1.localhost:5173` con `admin@farmacia1.local` y la clave `Farmacia1*2026`.
+- Entra a `farmacia1.localhost:5173` con `admin@farmacia1.local` y la clave `   `.
 - Entra a `farmacia2.localhost:5173` con `admin@farmacia2.local` y la clave `Farmacia2*2026`.
 - Verifica inventario, carrito, venta y factura en cada tenant.
 
@@ -228,3 +228,12 @@ docker compose exec backend python manage.py check
 ENTRENAR MODELO
 docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia1
 docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia2
+
+sembrar 30 registros de entrada para ver todos los estados
+de inventario.
+Para todos las farmacias:
+´docker compose exec backend python manage.py seed_entradas_inventario_estados --all-tenants --total 30´
+
+Para farmacia1:
+`docker compose exec backend python manage.py seed_entradas_inventario_estados --schema farmacia1 --total 30`
+docker compose exec backend python manage.py seed_tratamiento_demo --schema farmacia1

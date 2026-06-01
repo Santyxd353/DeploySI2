@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Usamos el microfono para buscar productos por voz en tu carrito.</string>
 </dict>
 </plist>

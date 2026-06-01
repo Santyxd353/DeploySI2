@@ -1,10 +1,11 @@
 ﻿from decimal import Decimal
 
+from django.db.models import Sum
 from django.utils import timezone
 from django.db import transaction
 from django.conf import settings
 from clientes.models import RecetaMedica
-from inventarios.models import Inventario, Producto
+from inventarios.models import Inventario, LimiteDispensacion, Producto
 from inventarios.services.stock_service import StockServiceError, descontar_stock
 
 from .models import DetalleVenta, Venta, Factura
@@ -19,6 +20,47 @@ class VentaServiceError(Exception):
     def __init__(self, message, code="venta_error"):
         super().__init__(message)
         self.code = code
+
+
+def _validar_limites_dispensacion(cliente, cantidades_por_producto, productos_map):
+    """
+    Verifica que ningún producto supere su límite legal de dispensación para el cliente.
+    Solo aplica cuando existe un LimiteDispensacion configurado para el producto.
+    """
+    producto_ids = list(cantidades_por_producto.keys())
+    limites = {
+        lim.producto_id: lim
+        for lim in LimiteDispensacion.objects.filter(producto_id__in=producto_ids).select_related("producto")
+    }
+
+    if not limites:
+        return
+
+    for producto_id, cantidad_solicitada in cantidades_por_producto.items():
+        limite = limites.get(producto_id)
+        if not limite:
+            continue
+
+        fecha_inicio = timezone.now() - timezone.timedelta(days=limite.periodo_dias)
+        ya_dispensado = (
+            DetalleVenta.objects.filter(
+                producto_id=producto_id,
+                venta__cliente=cliente,
+                venta__estado__in=["pagada", "entregada"],
+                venta__created_at__gte=fecha_inicio,
+            ).aggregate(total=Sum("cantidad"))["total"]
+            or 0
+        )
+
+        if ya_dispensado + cantidad_solicitada > limite.cantidad_maxima:
+            restante = max(0, limite.cantidad_maxima - ya_dispensado)
+            producto = productos_map[producto_id]
+            raise VentaServiceError(
+                f"Límite de dispensación excedido para '{producto.nombre_comercial}'. "
+                f"Puede dispensar hasta {limite.cantidad_maxima} unidad(es) cada {limite.periodo_dias} días. "
+                f"Ya dispensó {ya_dispensado} — disponible: {restante} unidad(es).",
+                code="limite_dispensacion_excedido",
+            )
 
 
 # ========== STRIPE SERVICES ==========
@@ -132,6 +174,8 @@ def crear_venta_service(
                 f"Stock insuficiente para {producto.nombre_comercial} (disponible: {inventario.stock_disponible}, solicitado: {cantidad_total}).",
                 code="stock_insuficiente",
             )
+
+    _validar_limites_dispensacion(cliente, cantidades_por_producto, productos_map)
 
     subtotal_venta = Decimal("0")
     detalles = []

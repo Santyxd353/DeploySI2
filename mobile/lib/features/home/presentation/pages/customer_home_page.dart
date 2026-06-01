@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../cart/customer_cart_tab.dart'; 
+import '../../../cart/customer_cart_tab.dart';
 import '../../../catalog/customer_catalog_tab.dart';
 import '../../../payments/my_payments_page.dart';
+import '../../../points/presentation/pages/customer_points_page.dart';
+import '../../../points/data/customer_points_service.dart';
+import '../../../points/data/models/customer_points_models.dart';
+import '../../../opinions/presentation/widgets/opinion_cliente_sheet.dart';
+import '../../../treatments/presentation/pages/treatments_catalog_page.dart';
 import '../../../../core/auth/auth_session_manager.dart';
 import '../../../auth/data/models/auth_user.dart';
 import '../../../auth/presentation/pages/login_page.dart';
@@ -16,8 +21,6 @@ class CustomerHomePage extends StatefulWidget {
 
 class _CustomerHomePageState extends State<CustomerHomePage> {
   int _selectedIndex = 0;
-  int? _clienteId;
-  String? _accessToken; 
   bool _isSyncing = true;
 
   @override
@@ -39,7 +42,6 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         return;
       }
 
-      _accessToken = session.accessToken;
       print("✅ Usuario autenticado: ${session.user.email}");
     } catch (e) {
       print("🚨 Error de conexión: $e");
@@ -53,20 +55,27 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
     if (_isSyncing) {
       return const Scaffold(
         backgroundColor: Color(0xFFF8FAF9),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF006A5E))),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF006A5E)),
+        ),
       );
     }
 
     final pages = [
       _HomeOverviewTab(
+        onOpenPoints: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CustomerPointsPage()),
+          );
+        },
         onOpenPayments: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const MyPaymentsPage()),
           );
         },
       ),
-      CustomerCatalogTab(clienteId: _clienteId, accessToken: _accessToken),
-      const CartTab(), 
+      const CustomerCatalogTab(),
+      const CartTab(),
       const _ProfileTab(),
     ];
 
@@ -75,7 +84,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
       appBar: AppBar(
         title: Text(
           'Farmacia Bibosi',
-          style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 22, color: const Color(0xFF191C1C)),
+          style: GoogleFonts.manrope(
+            fontWeight: FontWeight.w800,
+            fontSize: 22,
+            color: const Color(0xFF191C1C),
+          ),
         ),
         centerTitle: false,
         backgroundColor: const Color(0xFFF8FAF9),
@@ -89,7 +102,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
               border: Border.all(color: const Color(0xFFE0E3E1)),
             ),
             child: IconButton(
-              icon: const Icon(Icons.notifications_active_outlined, color: Color(0xFF191C1C), size: 22),
+              icon: const Icon(
+                Icons.notifications_active_outlined,
+                color: Color(0xFF191C1C),
+                size: 22,
+              ),
               onPressed: () {},
             ),
           ),
@@ -104,7 +121,8 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+        onDestinationSelected: (index) =>
+            setState(() => _selectedIndex = index),
         backgroundColor: Colors.white,
         elevation: 10,
         shadowColor: Colors.black.withOpacity(0.1),
@@ -112,24 +130,45 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: [
           NavigationDestination(
-            icon: const Icon(Icons.space_dashboard_outlined, color: Color(0xFF3E4946)), 
-            selectedIcon: const Icon(Icons.space_dashboard_rounded, color: Color(0xFF006A5E)), 
-            label: 'Inicio'
+            icon: const Icon(
+              Icons.space_dashboard_outlined,
+              color: Color(0xFF3E4946),
+            ),
+            selectedIcon: const Icon(
+              Icons.space_dashboard_rounded,
+              color: Color(0xFF006A5E),
+            ),
+            label: 'Inicio',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.medical_services_outlined, color: Color(0xFF3E4946)), 
-            selectedIcon: const Icon(Icons.medical_services_rounded, color: Color(0xFF006A5E)), 
-            label: 'Catálogo'
+            icon: const Icon(
+              Icons.medical_services_outlined,
+              color: Color(0xFF3E4946),
+            ),
+            selectedIcon: const Icon(
+              Icons.medical_services_rounded,
+              color: Color(0xFF006A5E),
+            ),
+            label: 'Catalogo',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.shopping_bag_outlined, color: Color(0xFF3E4946)), 
-            selectedIcon: const Icon(Icons.shopping_bag_rounded, color: Color(0xFF006A5E)), 
-            label: 'Carrito'
+            icon: const Icon(
+              Icons.shopping_bag_outlined,
+              color: Color(0xFF3E4946),
+            ),
+            selectedIcon: const Icon(
+              Icons.shopping_bag_rounded,
+              color: Color(0xFF006A5E),
+            ),
+            label: 'Carrito',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.person_outline, color: Color(0xFF3E4946)), 
-            selectedIcon: const Icon(Icons.person_rounded, color: Color(0xFF006A5E)), 
-            label: 'Perfil'
+            icon: const Icon(Icons.person_outline, color: Color(0xFF3E4946)),
+            selectedIcon: const Icon(
+              Icons.person_rounded,
+              color: Color(0xFF006A5E),
+            ),
+            label: 'Perfil',
           ),
         ],
       ),
@@ -148,6 +187,17 @@ class _ProfileTabState extends State<_ProfileTab> {
   AuthUser? _user;
   bool _loading = true;
   bool _loggingOut = false;
+
+  Future<void> _openOpiniones() async {
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const OpinionClienteSheet(),
+    );
+  }
 
   @override
   void initState() {
@@ -179,7 +229,9 @@ class _ProfileTabState extends State<_ProfileTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF006A5E)));
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF006A5E)),
+      );
     }
 
     return Center(
@@ -191,7 +243,13 @@ class _ProfileTabState extends State<_ProfileTab> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8))],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
             border: Border.all(color: const Color(0xFFF0F2F1)),
           ),
           child: Column(
@@ -206,7 +264,11 @@ class _ProfileTabState extends State<_ProfileTab> {
                 child: const CircleAvatar(
                   radius: 40,
                   backgroundColor: Color(0xFFF0F2F1),
-                  child: Icon(Icons.person_rounded, size: 45, color: Color(0xFF006A5E)),
+                  child: Icon(
+                    Icons.person_rounded,
+                    size: 45,
+                    color: Color(0xFF006A5E),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -229,7 +291,10 @@ class _ProfileTabState extends State<_ProfileTab> {
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF8F4),
                   borderRadius: BorderRadius.circular(999),
@@ -248,17 +313,51 @@ class _ProfileTabState extends State<_ProfileTab> {
               SizedBox(
                 width: double.infinity,
                 height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _openOpiniones,
+                  icon: const Icon(
+                    Icons.rate_review_rounded,
+                    size: 20,
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006A5E),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  label: Text(
+                    'Dejar una opinion',
+                    style: GoogleFonts.manrope(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
                 child: OutlinedButton.icon(
                   onPressed: _loggingOut ? null : _logout,
-                  icon: const Icon(Icons.logout_rounded, color: Color(0xFFBA1A1A)),
+                  icon: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFBA1A1A),
+                  ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFF0F2F1)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     foregroundColor: const Color(0xFFBA1A1A),
                   ),
                   label: Text(
                     _loggingOut ? 'Cerrando sesión...' : 'Cerrar sesión',
-                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+                    style: GoogleFonts.manrope(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ),
@@ -270,10 +369,59 @@ class _ProfileTabState extends State<_ProfileTab> {
   }
 }
 
-class _HomeOverviewTab extends StatelessWidget {
-  const _HomeOverviewTab({required this.onOpenPayments});
+class _HomeOverviewTab extends StatefulWidget {
+  const _HomeOverviewTab({
+    required this.onOpenPayments,
+    required this.onOpenPoints,
+  });
 
   final VoidCallback onOpenPayments;
+  final VoidCallback onOpenPoints;
+
+  @override
+  State<_HomeOverviewTab> createState() => _HomeOverviewTabState();
+}
+
+class _HomeOverviewTabState extends State<_HomeOverviewTab> {
+  final CustomerPointsService _pointsService = CustomerPointsService();
+
+  bool _loadingPoints = true;
+  String? _pointsError;
+  CustomerPointsDashboard? _dashboard;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPointsSummary();
+  }
+
+  Future<void> _loadPointsSummary() async {
+    try {
+      final token = await AuthSessionManager.getAccessToken();
+      if (token == null || token.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _loadingPoints = false;
+          _pointsError = null;
+        });
+        return;
+      }
+
+      final dashboard = await _pointsService.loadDashboard(accessToken: token);
+      if (!mounted) return;
+      setState(() {
+        _dashboard = dashboard;
+        _loadingPoints = false;
+        _pointsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingPoints = false;
+        _pointsError = e.toString();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -302,7 +450,10 @@ class _HomeOverviewTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
@@ -310,12 +461,20 @@ class _HomeOverviewTab extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.verified_rounded, color: Colors.white, size: 16),
+                    const Icon(
+                      Icons.verified_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
                         'Cuenta Verificada',
-                        style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11),
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -344,9 +503,13 @@ class _HomeOverviewTab extends StatelessWidget {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 32),
-        
+
+        _buildPointsSummaryCard(context),
+
+        const SizedBox(height: 24),
+
         Text(
           'Accesos rápidos',
           style: GoogleFonts.manrope(
@@ -356,13 +519,12 @@ class _HomeOverviewTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        
-        // GRID DE TARJETAS (ESTILO DASHBOARD MODERN)
+
         Row(
           children: [
             Expanded(
               child: _QuickActionCard(
-                icon: Icons.medication_rounded,
+                icon: Icons.medical_services_rounded,
                 label: 'Catálogo',
                 toneColor: const Color(0xFF006A5E),
                 backgroundTint: const Color(0xFFEAF8F4),
@@ -388,6 +550,7 @@ class _HomeOverviewTab extends StatelessWidget {
                 label: 'Mis Puntos',
                 toneColor: const Color(0xFFB76E00),
                 backgroundTint: const Color(0xFFFFF3E0),
+                onTap: widget.onOpenPoints,
               ),
             ),
             const SizedBox(width: 16),
@@ -397,12 +560,240 @@ class _HomeOverviewTab extends StatelessWidget {
                 label: 'Mis Pagos',
                 toneColor: const Color(0xFF6A1B9A),
                 backgroundTint: const Color(0xFFF6ECFF),
-                onTap: onOpenPayments,
+                onTap: widget.onOpenPayments,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _QuickActionCard(
+                icon: Icons.medication_liquid_rounded,
+                label: 'Tratamientos',
+                toneColor: const Color(0xFF006A5E),
+                backgroundTint: const Color(0xFFEAF8F4),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TreatmentsCatalogPage(),
+                    ),
+                  );
+                },
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildPointsSummaryCard(BuildContext context) {
+    if (_loadingPoints) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE0E3E1)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFFB76E00),
+              ),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Cargando tu resumen de puntos...',
+                style: TextStyle(color: Color(0xFF5A6562), fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final dashboard = _dashboard;
+    if (dashboard == null) {
+      return const SizedBox.shrink();
+    }
+
+    final available = dashboard.account.availablePoints;
+    final minRedeem = dashboard.configuration.minimumRedeemPoints;
+    final pointsToRedeem = available >= minRedeem ? 0 : minRedeem - available;
+    final canRedeem = available >= minRedeem;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE0E3E1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.stars_rounded,
+                  color: Color(0xFFB76E00),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tus puntos',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: const Color(0xFF191C1C),
+                      ),
+                    ),
+                    Text(
+                      canRedeem
+                          ? 'Ya puedes canjear recompensas del catálogo'
+                          : 'Te faltan $pointsToRedeem puntos para el primer canje',
+                      style: GoogleFonts.manrope(
+                        color: const Color(0xFF6F7977),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$available',
+                style: GoogleFonts.manrope(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 28,
+                  color: const Color(0xFFB76E00),
+                ),
+              ),
+            ],
+          ),
+          if (_pointsError != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'No pudimos cargar todos los detalles, pero puedes abrir el módulo de puntos igual.',
+              style: GoogleFonts.manrope(
+                color: const Color(0xFF6F7977),
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Ganados',
+                  value: '${dashboard.account.accumulatedPoints}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Canjeados',
+                  value: '${dashboard.account.redeemedPoints}',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MiniPointsStat(
+                  label: 'Nivel',
+                  value: dashboard.account.level.toUpperCase(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: widget.onOpenPoints,
+              icon: const Icon(Icons.arrow_forward_rounded),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFE4E7E5)),
+                foregroundColor: const Color(0xFF006A5E),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              label: Text(
+                'Abrir mis puntos',
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniPointsStat extends StatelessWidget {
+  const _MiniPointsStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAF9),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.manrope(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: const Color(0xFF191C1C),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: GoogleFonts.manrope(
+              color: const Color(0xFF6F7977),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -465,7 +856,11 @@ class _QuickActionCard extends StatelessWidget {
                     fontSize: 15,
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded, color: const Color(0xFFBDC9C5), size: 20),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: const Color(0xFFBDC9C5),
+                  size: 20,
+                ),
               ],
             ),
           ],
@@ -475,57 +870,3 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Container(
-          width: 420,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0x1ABDC9C5)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 42, color: const Color(0xFF006A5E)),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: GoogleFonts.manrope(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF191C1C),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF3E4946),
-                  fontSize: 14,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -38,7 +38,14 @@ function CartItem({ item, onUpdateQuantity, onRemove }) {
     <div className="mb-2 rounded-xl border border-slate-100 bg-slate-50 p-3 transition-all duration-150 hover:border-slate-200">
       <div className="mb-1.5 flex items-start justify-between">
         <div className="flex-1 pr-2">
-          <p className="text-sm font-bold text-slate-800 line-clamp-1">{item.nombre}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-sm font-bold text-slate-800 line-clamp-1">{item.nombre}</p>
+            {item.requiere_receta ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                ⚠ Receta
+              </span>
+            ) : null}
+          </div>
           <p className="text-[11px] text-slate-500">SKU: {item.sku}</p>
         </div>
         <button

@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_context
 
+from clientes.models import Cliente
 from core.rbac import (
     ROLE_ADMIN,
     ROLE_CAJERO,
@@ -130,6 +131,19 @@ class Command(BaseCommand):
                         updated_count += 1
 
                     asignar_rol_usuario(user, item["role"])
+
+                    if item["role"] == ROLE_CLIENTE:
+                        Cliente.objects.get_or_create(
+                            usuario=user,
+                            defaults={
+                                "tenant": tenant,
+                                "tipo": "registrado",
+                                "nombres": item["first_name"],
+                                "apellidos": item["last_name"],
+                                "email": email,
+                                "estado": True,
+                            },
+                        )
 
                     update_fields = ["first_name", "last_name", "is_active", "is_superuser", "is_staff"]
                     if created or reset_password:

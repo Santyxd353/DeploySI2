@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import AdminLayout from "../../components/admin/AdminLayout";
+import CRMLayout from "../../components/crm/CRMLayout";
+import ClienteDetallePanel from "../../components/crm/ClienteDetallePanel";
 import { clientesService } from "../../services/clientesService";
 import { useAuth } from "../../context/AuthContext";
 
@@ -13,6 +13,13 @@ const initialForm = {
   email: "",
   telefono: "",
   ci_nit: "",
+  direccion: "",
+  fecha_nacimiento: "",
+  genero: "",
+  alergias: "",
+  medicamentos_frecuentes: "",
+  medico_habitual: "",
+  observaciones: "",
   estado: true,
 };
 
@@ -28,8 +35,7 @@ function normalizeListResponse(response) {
 }
 
 export default function AdminClientesPage() {
-  const navigate = useNavigate();
-  const { user, logout, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const canViewClientes = hasPermission("clientes.ver");
   const canManageClientes = hasPermission("clientes.gestionar") || hasPermission("clientes.ver");
 
@@ -47,6 +53,7 @@ export default function AdminClientesPage() {
   const [saving, setSaving] = useState(false);
   const [editingCliente, setEditingCliente] = useState(null);
   const [formData, setFormData] = useState(initialForm);
+  const [viewingCliente, setViewingCliente] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / CLIENTES_PAGE_SIZE));
   const hasFilters = Boolean(debouncedSearch.trim()) || statusFilter !== "all" || tipoFilter !== "all";
@@ -92,11 +99,6 @@ export default function AdminClientesPage() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    navigate("/", { replace: true });
-  };
-
   const resetForm = () => {
     setFormData(initialForm);
     setEditingCliente(null);
@@ -114,6 +116,13 @@ export default function AdminClientesPage() {
       email: formData.email.trim(),
       telefono: formData.telefono.trim(),
       ci_nit: formData.ci_nit.trim(),
+      direccion: formData.direccion.trim(),
+      fecha_nacimiento: formData.fecha_nacimiento || null,
+      genero: formData.genero,
+      alergias: formData.alergias.trim(),
+      medicamentos_frecuentes: formData.medicamentos_frecuentes.trim(),
+      medico_habitual: formData.medico_habitual.trim(),
+      observaciones: formData.observaciones.trim(),
       estado: Boolean(formData.estado),
     };
 
@@ -154,6 +163,13 @@ export default function AdminClientesPage() {
       email: cliente.email || "",
       telefono: cliente.telefono || "",
       ci_nit: cliente.ci_nit || "",
+      direccion: cliente.direccion || "",
+      fecha_nacimiento: cliente.fecha_nacimiento || "",
+      genero: cliente.genero || "",
+      alergias: cliente.alergias || "",
+      medicamentos_frecuentes: cliente.medicamentos_frecuentes || "",
+      medico_habitual: cliente.medico_habitual || "",
+      observaciones: cliente.observaciones || "",
       estado: Boolean(cliente.estado),
     });
     setShowForm(true);
@@ -180,17 +196,17 @@ export default function AdminClientesPage() {
 
   if (!canViewClientes) {
     return (
-      <AdminLayout activeSection="customers" currentUser={user} onLogout={handleLogout}>
+      <CRMLayout activeSection="clientes">
         <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-md">
-          <h1 className="text-2xl font-black text-slate-900">Admin / Clientes</h1>
+          <h1 className="text-2xl font-black text-slate-900">CRM / Clientes</h1>
           <p className="mt-2 text-sm text-rose-600">No tienes permisos para ver esta sección.</p>
         </section>
-      </AdminLayout>
+      </CRMLayout>
     );
   }
 
   return (
-    <AdminLayout activeSection="customers" currentUser={user} onLogout={handleLogout}>
+    <CRMLayout activeSection="clientes">
       <section className="rounded-[28px] border border-slate-200 bg-white/97 p-4 shadow-md sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -307,6 +323,13 @@ export default function AdminClientesPage() {
                       <div className="inline-flex items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => setViewingCliente(cliente)}
+                          className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                        >
+                          Ver
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleEdit(cliente)}
                           className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
@@ -351,11 +374,20 @@ export default function AdminClientesPage() {
           </div>
         </div>
 
+        {viewingCliente ? (
+          <ClienteDetallePanel
+            cliente={viewingCliente}
+            onClose={() => setViewingCliente(null)}
+          />
+        ) : null}
+
         {showForm ? (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4" onClick={resetForm}>
             <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <h2 className="text-xl font-black text-slate-900">{editingCliente ? "Editar cliente" : "Nuevo cliente"}</h2>
-              <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
+              <form className="mt-4 max-h-[75vh] space-y-3 overflow-y-auto pr-1" onSubmit={handleSubmit}>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Datos personales</p>
+
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-xs font-semibold text-slate-500">Nombres *</span>
@@ -397,7 +429,7 @@ export default function AdminClientesPage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
-                  <label className="space-y-1 md:col-span-1">
+                  <label className="space-y-1">
                     <span className="text-xs font-semibold text-slate-500">CI/NIT</span>
                     <input
                       value={formData.ci_nit}
@@ -405,7 +437,42 @@ export default function AdminClientesPage() {
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
                     />
                   </label>
-                  <label className="space-y-1 md:col-span-1">
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-500">Fecha de nacimiento</span>
+                    <input
+                      type="date"
+                      value={formData.fecha_nacimiento}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, fecha_nacimiento: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-500">Género</span>
+                    <select
+                      value={formData.genero}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, genero: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                    >
+                      <option value="">Sin especificar</option>
+                      <option value="M">Masculino</option>
+                      <option value="F">Femenino</option>
+                      <option value="O">Otro</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">Dirección</span>
+                  <input
+                    value={formData.direccion}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, direccion: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                    placeholder="Calle, ciudad, departamento"
+                  />
+                </label>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1">
                     <span className="text-xs font-semibold text-slate-500">Tipo</span>
                     <select
                       value={formData.tipo}
@@ -416,7 +483,7 @@ export default function AdminClientesPage() {
                       <option value="invitado">Invitado</option>
                     </select>
                   </label>
-                  <label className="flex items-end gap-2 pb-2 md:col-span-1">
+                  <label className="flex items-end gap-2 pb-2">
                     <input
                       type="checkbox"
                       checked={formData.estado}
@@ -425,6 +492,51 @@ export default function AdminClientesPage() {
                     <span className="text-sm font-semibold text-slate-700">Cliente activo</span>
                   </label>
                 </div>
+
+                <p className="pt-1 text-xs font-bold uppercase tracking-wide text-slate-400">Información clínica</p>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">Alergias</span>
+                  <textarea
+                    value={formData.alergias}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, alergias: e.target.value }))}
+                    rows={2}
+                    placeholder="Ej: penicilina, sulfas, látex..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">Medicamentos frecuentes</span>
+                  <textarea
+                    value={formData.medicamentos_frecuentes}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, medicamentos_frecuentes: e.target.value }))}
+                    rows={2}
+                    placeholder="Medicamentos que consume regularmente..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">Médico habitual</span>
+                  <input
+                    value={formData.medico_habitual}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, medico_habitual: e.target.value }))}
+                    placeholder="Nombre del médico o centro de salud"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">Observaciones</span>
+                  <textarea
+                    value={formData.observaciones}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, observaciones: e.target.value }))}
+                    rows={3}
+                    placeholder="Notas clínicas, preferencias u otras observaciones relevantes..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-300"
+                  />
+                </label>
 
                 <div className="mt-2 flex justify-end gap-2">
                   <button
@@ -447,6 +559,6 @@ export default function AdminClientesPage() {
           </div>
         ) : null}
       </section>
-    </AdminLayout>
+    </CRMLayout>
   );
 }

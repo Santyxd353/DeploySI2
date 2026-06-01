@@ -12,6 +12,13 @@ class CarritoServiceError(Exception):
     pass
 
 
+def _validar_stock_para_carrito(*, disponible, solicitado):
+    if solicitado > disponible:
+        raise CarritoServiceError(
+            f"Stock insuficiente. Solo hay {disponible} unidad(es) disponible(s) para este producto."
+        )
+
+
 def _sync_carrito_pk_sequence():
     """Sincroniza la secuencia PK de carrito_carrito con el max(id) actual."""
     with connection.cursor() as cursor:
@@ -60,15 +67,19 @@ def agregar_item_carrito(*, carrito, producto_id, cantidad):
     producto = Producto.objects.filter(id=producto_id, estado=True).first()
     if not producto:
         raise CarritoServiceError("Producto no encontrado o inactivo.")
-    inventario = Inventario.objects.filter(producto=producto).first()
+    inventario = Inventario.objects.select_for_update().filter(producto=producto).first()
     if not inventario:
         raise CarritoServiceError("Inventario no configurado para el producto.")
+    stock_disponible = int(inventario.stock_disponible)
 
     item, created = CarritoItem.objects.select_for_update().get_or_create(
         carrito=carrito,
         producto=producto,
         defaults={"cantidad": cantidad, "precio_unitario": producto.precio_venta, "subtotal": Decimal(producto.precio_venta) * cantidad},
     )
+
+    cantidad_objetivo = cantidad if created else int(item.cantidad) + cantidad
+    _validar_stock_para_carrito(disponible=stock_disponible, solicitado=cantidad_objetivo)
 
     if not created:
         item.cantidad = F("cantidad") + cantidad
@@ -90,6 +101,16 @@ def actualizar_item_carrito(*, carrito, item_id, cantidad):
     item = CarritoItem.objects.select_for_update().filter(id=item_id, carrito=carrito).first()
     if not item:
         raise CarritoServiceError("Item no encontrado en el carrito.")
+
+    inventario = Inventario.objects.select_for_update().filter(producto=item.producto).first()
+    if not inventario:
+        raise CarritoServiceError("Inventario no configurado para el producto.")
+    # Regla profesional de carrito:
+    # permitir siempre reducir cantidad aunque el stock actual haya bajado por ventas externas;
+    # validar stock solo cuando se intenta aumentar.
+    if cantidad > int(item.cantidad):
+        stock_disponible = int(inventario.stock_disponible)
+        _validar_stock_para_carrito(disponible=stock_disponible, solicitado=cantidad)
 
     item.cantidad = cantidad
     item.subtotal = Decimal(item.precio_unitario) * cantidad

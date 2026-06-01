@@ -11,6 +11,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { Button } from "../components/ui/button";
 import { carritoService, pagosService } from "../services/carritoService";
+import { puntosService } from "../services/puntosService";
 import { useAuth } from "../context/AuthContext";
 
 // Cargar Stripe con la clave pública
@@ -286,6 +287,7 @@ function PaymentForm({ total, onSuccess, onError, onCartCleared, onCartSynced })
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
+  const { user } = useAuth();
 
   const [items, setItems] = useState([]);
   const [subtotal, setSubtotal] = useState(0);
@@ -298,6 +300,7 @@ export default function CheckoutPage() {
   const [facturaDetalle, setFacturaDetalle] = useState(null);
   const [facturaLoading, setFacturaLoading] = useState(false);
   const [facturaError, setFacturaError] = useState(null);
+  const [bolivianosPorPunto, setBolivianosPorPunto] = useState(null);
 
   const hydrateCartFromBackend = (data) => {
     const backendItems = Array.isArray(data?.items) ? data.items : [];
@@ -351,6 +354,17 @@ export default function CheckoutPage() {
 
     loadCart();
   }, [state]);
+
+  useEffect(() => {
+    if (!user) return;
+    puntosService
+      .miCuenta()
+      .then((data) => {
+        const cfg = data?.configuracion;
+        if (cfg?.bolivianos_por_punto) setBolivianosPorPunto(Number(cfg.bolivianos_por_punto));
+      })
+      .catch(() => {});
+  }, [user]);
 
   // ✅ Limpiar items del carrito cuando se vuelve a la página después del pago
   useEffect(() => {
@@ -682,6 +696,19 @@ export default function CheckoutPage() {
                   <span>{formatPrecio(totalConEnvio)}</span>
                 </div>
               </div>
+              {user && bolivianosPorPunto && totalConEnvio > 0 && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-cyan-50 border border-cyan-100 px-3 py-2.5">
+                  <span className="text-lg">✨</span>
+                  <div>
+                    <p className="text-xs font-black text-cyan-800">
+                      +{Math.floor(totalConEnvio / bolivianosPorPunto)} puntos con esta compra
+                    </p>
+                    <p className="text-[10px] text-cyan-600">
+                      Se acreditan automaticamente al confirmar el pago
+                    </p>
+                  </div>
+                </div>
+              )}
               <p className="mt-3 text-center text-xs font-semibold text-slate-500">
                 Pago seguro SSL con tarjeta de crédito.
               </p>

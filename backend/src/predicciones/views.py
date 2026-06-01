@@ -98,6 +98,55 @@ def predecir_demanda(request):
         for i, pred in enumerate(predicciones)
     ]
 
+    try:
+        inventario = Inventario.objects.select_related('producto').get(producto_id=producto_id)
+        stock_actual = inventario.stock_actual
+        stock_minimo = inventario.stock_minimo or inventario.producto.stock_minimo or 0
+    except Inventario.DoesNotExist:
+        stock_actual = None
+        stock_minimo = None
+
+    media_historica = df_hist['unidades'].mean()
+    prediccion_diaria = float(np.mean(predicciones)) if len(predicciones) else 0.0
+    cobertura_dias = None
+    alerta_predictiva = None
+    if stock_actual is not None and prediccion_diaria > 0:
+        cobertura_dias = float(stock_actual / prediccion_diaria)
+        variacion_demanda = 0.0
+        if media_historica > 0:
+            variacion_demanda = round(((prediccion_diaria - media_historica) / media_historica) * 100, 1)
+
+        if cobertura_dias <= 5:
+            nivel = "Crítica"
+            color = "rojo"
+            condicion = "El stock se agotará antes de que llegue el proveedor."
+            accion = f"Desabastecimiento inminente en {max(1, int(round(cobertura_dias)))} días. Crear orden de compra urgente."
+        elif cobertura_dias <= 10:
+            nivel = "Preventiva"
+            color = "amarillo"
+            condicion = "El stock está justo en el límite para hacer el pedido a tiempo."
+            if variacion_demanda > 0:
+                accion = f"Sugerencia de reabastecimiento. La demanda subirá un {abs(variacion_demanda)}% la próxima semana."
+            else:
+                accion = "Sugerencia de reabastecimiento. La demanda se mantiene estable, pero la cobertura es limitada."
+        else:
+            nivel = "Estable"
+            color = "verde"
+            condicion = "Stock suficiente para cubrir la demanda proyectada."
+            accion = "Inventario óptimo."
+
+        alerta_predictiva = {
+            "nivel": nivel,
+            "color": color,
+            "condicion": condicion,
+            "accion": accion,
+            "stock_actual": stock_actual,
+            "stock_minimo": stock_minimo,
+            "cobertura_dias": round(cobertura_dias, 1),
+            "prediccion_diaria": round(prediccion_diaria, 2),
+            "variacion_demanda": round(variacion_demanda, 1),
+        }
+
     tendencia_valor = df_future['tendencia'].iloc[-1] if not df_future.empty else 0
     if tendencia_valor > 0.5:
         tendencia = "creciente"
@@ -106,7 +155,6 @@ def predecir_demanda(request):
     else:
         tendencia = "estable"
 
-    media_historica = df_hist['unidades'].mean()
     if np.array(predicciones).mean() > media_historica * 1.2:
         estacionalidad = "temporada_alta"
     elif np.array(predicciones).mean() < media_historica * 0.8:
@@ -118,7 +166,8 @@ def predecir_demanda(request):
         "producto_id": producto_id,
         "predicciones": predicciones_list,
         "tendencia": tendencia,
-        "estacionalidad": estacionalidad
+        "estacionalidad": estacionalidad,
+        "alerta_predictiva": alerta_predictiva,
     }
     if not modelo_activo:
         respuesta["aviso"] = "Predicción simulada (modelo IA no disponible)"

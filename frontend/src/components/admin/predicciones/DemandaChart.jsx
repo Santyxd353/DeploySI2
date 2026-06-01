@@ -45,6 +45,8 @@ export default function PrediccionChart({ prediccion }) {
 
   const tieneIntervalo = chartData.some(d => d.confianza_superior != null);
 
+  const alerta = prediccion?.alerta_predictiva;
+
   return (
     <div className="space-y-6 animate-in fade-in-50">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -59,6 +61,79 @@ export default function PrediccionChart({ prediccion }) {
           </span>
         </div>
       </div>
+
+      {alerta && (
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_1.8fr]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Alerta predictiva</p>
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${alerta.color === 'rojo' ? 'bg-red-100 text-red-700' : alerta.color === 'amarillo' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {alerta.color === 'rojo' ? '🔴' : alerta.color === 'amarillo' ? '🟡' : '🟢'}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{alerta.nivel}</p>
+                  <p className="text-xs text-slate-500">Cobertura estimada: {alerta.cobertura_dias} días</p>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                <p className="font-medium">Condición</p>
+                <p className="mt-1 text-sm text-slate-600">{alerta.condicion}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                <p className="font-medium">Acción sugerida</p>
+                <p className="mt-1 text-sm text-slate-600">{alerta.accion}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs text-slate-500">
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-800">Stock actual</p>
+                  <p>{alerta.stock_actual ?? '-' } uds.</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-800">Stock mínimo</p>
+                  <p>{alerta.stock_minimo ?? '-'} uds.</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-800">Demanda diaria</p>
+                  <p>{alerta.prediccion_diaria ?? '-'} uds.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Guía de alertas</p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700 uppercase">Nivel de Alerta</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700 uppercase">Condición</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700 uppercase">Acción sugerida</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <tr>
+                    <td className="px-4 py-3 text-red-700 font-semibold">🔴 Crítica</td>
+                    <td className="px-4 py-3 text-slate-600">El stock se agotará antes de que llegue el proveedor.</td>
+                    <td className="px-4 py-3 text-slate-600">Desabastecimiento inminente en {alerta.cobertura_dias} días. Crear orden de compra urgente.</td>
+                  </tr>
+                  <tr className="bg-slate-50">
+                    <td className="px-4 py-3 text-amber-700 font-semibold">🟡 Preventiva</td>
+                    <td className="px-4 py-3 text-slate-600">El stock está justo en el límite para hacer el pedido a tiempo.</td>
+                    <td className="px-4 py-3 text-slate-600">Sugerencia de reabastecimiento. La demanda subirá un {Math.abs(alerta.variacion_demanda)}% la próxima semana.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-emerald-700 font-semibold">🟢 Estable</td>
+                    <td className="px-4 py-3 text-slate-600">Stock suficiente para cubrir la demanda proyectada.</td>
+                    <td className="px-4 py-3 text-slate-600">Inventario óptimo.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-4">Demanda estimada por día</h3>

@@ -7,6 +7,7 @@ from .views import (
     crear_intent_pago,
     confirmar_pago_venta,
     listar_mis_facturas,
+    listar_historial_ventas,
     obtener_factura,
     stripe_webhook,
 )
@@ -16,8 +17,11 @@ urlpatterns = [
     path("crear-fisica/", crear_venta_fisica, name="ventas-crear-fisica"),
     path("crear-online/", crear_venta_online, name="ventas-crear-online"),
     path("pos/crear/", crear_venta_pos, name="ventas-pos-crear"),
-    
-    # Nuevas URLs de Stripe + Facturación
+
+    # HU-18: Historial de ventas con RBAC y paginación
+    path("historial/", listar_historial_ventas, name="ventas-historial"),
+
+    # Stripe + Facturación
     path("intent-pago/", crear_intent_pago, name="crear_intent_pago"),
     path("confirmar-pago/", confirmar_pago_venta, name="confirmar_pago_venta"),
     path("mis-facturas/", listar_mis_facturas, name="listar_mis_facturas"),
