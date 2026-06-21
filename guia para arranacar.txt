@@ -65,7 +65,7 @@ Si prefieres una semilla rapida para desarrollo, el proyecto tambien puede crear
 Esta farmacia debe tener su propia credencial de acceso, distinta del superusuario global.
 
 ```powershell
-docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 1', subdominio='farmacia1', email_admin='admin@farmacia1.local', password='Farmacia1*2026')"
+docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 1', subdominio='farmacia1', email_admin='admin@farmacia1.local', password='123456')"
 ```
 
 Datos que quedaran creados:

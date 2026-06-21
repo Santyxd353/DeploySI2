@@ -1,5 +1,5 @@
 from django.urls import path
-
+from .views import dashboard_view  
 from .views import catalogo_reportes_view, generar_reporte_view, interpretar_texto_view, interpretar_audio_view
 
 
@@ -8,4 +8,5 @@ urlpatterns = [
     path("generar/", generar_reporte_view, name="reportes-generar"),
     path("ia/interpretar/", interpretar_texto_view, name="reportes-ia-interpretar"),
     path("ia/audio/", interpretar_audio_view, name="reportes-ia-audio"),
+    path("dashboard/", dashboard_view, name="reportes-dashboard"),
 ]
