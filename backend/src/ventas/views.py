@@ -15,7 +15,10 @@ from clientes.models import Cliente
 from core.audit import log_system_event
 from carrito.models import Carrito
 
-from .serializers import POSVentaInputSerializer, VentaCreateInputSerializer, VentaSerializer
+from .serializers import (
+    POSVentaInputSerializer, VentaCreateInputSerializer, VentaSerializer,
+    VentaClienteSerializer, VentaAdminSerializer
+)
 from .services import VentaServiceError, crear_venta_service, crear_payment_intent, verificar_payment_intent
 from .models import DetalleVenta, Factura, Venta
 
@@ -740,3 +743,92 @@ def listar_historial_ventas(request):
         "resumen": resumen,
         "productos_frecuentes": productos_frecuentes,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def obtener_estadisticas_cliente(request):
+    """
+    GET /api/ventas/historial/estadisticas/
+    
+    HU-18: Estadísticas personales del cliente autenticado.
+    
+    Devuelve:
+    {
+        "total_gastado": float,
+        "total_compras": int,
+        "ticket_promedio": float,
+        "ultima_compra": object,
+        "compras_este_mes": int,
+        "estado_pagada_count": int,
+        "estado_pendiente_count": int,
+    }
+    """
+    usuario = request.user
+    
+    try:
+        cliente = usuario.cliente
+    except:
+        return Response(
+            {"detail": "Usuario no tiene cliente asociado"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Solo ventas completadas (pagadas o entregadas)
+    qs_completadas = Venta.objects.filter(
+        tenant=request.tenant,
+        cliente=cliente,
+        estado__in=['pagada', 'entregada']
+    )
+    
+    # Agregados de ventas completadas
+    agg = qs_completadas.aggregate(
+        total=Sum('total'),
+        cantidad=Count('id')
+    )
+    
+    total_gastado = float(agg['total'] or 0)
+    total_compras = agg['cantidad'] or 0
+    
+    # Ticket promedio
+    ticket_promedio = 0
+    if total_compras > 0:
+        ticket_promedio = round(total_gastado / total_compras, 2)
+    
+    # Última compra
+    ultima_compra = qs_completadas.order_by('-created_at').first()
+    ultima_compra_data = None
+    if ultima_compra:
+        ultima_compra_data = VentaClienteSerializer(ultima_compra).data
+    
+    # Compras este mes
+    from django.utils import timezone
+    hoy = timezone.now()
+    primer_dia_mes = hoy.replace(day=1)
+    compras_este_mes = qs_completadas.filter(
+        created_at__gte=primer_dia_mes
+    ).count()
+    
+    # Contar por estado
+    qs_todas = Venta.objects.filter(
+        tenant=request.tenant,
+        cliente=cliente
+    )
+    estado_pagada_count = qs_todas.filter(estado='pagada').count()
+    estado_pendiente_count = qs_todas.filter(estado='pendiente').count()
+    estado_entregada_count = qs_todas.filter(estado='entregada').count()
+    estado_cancelada_count = qs_todas.filter(estado='cancelada').count()
+    
+    stats = {
+        "total_gastado": total_gastado,
+        "total_compras": total_compras,
+        "ticket_promedio": ticket_promedio,
+        "ultima_compra": ultima_compra_data,
+        "compras_este_mes": compras_este_mes,
+        "estado_pagada_count": estado_pagada_count,
+        "estado_pendiente_count": estado_pendiente_count,
+        "estado_entregada_count": estado_entregada_count,
+        "estado_cancelada_count": estado_cancelada_count,
+    }
+    
+    return Response(stats)

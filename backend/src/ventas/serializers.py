@@ -100,3 +100,68 @@ class VentaSerializer(serializers.ModelSerializer):
             "detalles",
         ]
         read_only_fields = ["stripe_payment_intent_id"]
+
+
+# HU-18: Serializers para Cliente
+class VentaClienteSerializer(serializers.ModelSerializer):
+    """
+    Serializer limitado para cliente (HU-18).
+    Solo muestra información relevante de sus propias compras.
+    """
+    detalles = DetalleVentaSerializer(many=True, read_only=True)
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+    
+    class Meta:
+        model = Venta
+        fields = [
+            "id",
+            "estado",
+            "estado_label",
+            "total",
+            "created_at",
+            "detalles",
+            "observacion",
+        ]
+        read_only_fields = fields
+
+
+# HU-36: Serializers para Admin
+class VentaAdminSerializer(serializers.ModelSerializer):
+    """
+    Serializer completo para admin (HU-36).
+    Incluye información del cliente y vendedor.
+    """
+    cliente_nombre = serializers.CharField(source="cliente.nombres", read_only=True)
+    cliente_email = serializers.CharField(source="cliente.email", read_only=True)
+    vendedor_nombre = serializers.SerializerMethodField()
+    detalles = DetalleVentaSerializer(many=True, read_only=True)
+    estado_label = serializers.CharField(source="get_estado_display", read_only=True)
+    origen_label = serializers.CharField(source="get_origen_display", read_only=True)
+    
+    class Meta:
+        model = Venta
+        fields = [
+            "id",
+            "cliente",
+            "cliente_nombre",
+            "cliente_email",
+            "vendedor",
+            "vendedor_nombre",
+            "origen",
+            "origen_label",
+            "estado",
+            "estado_label",
+            "subtotal",
+            "descuento",
+            "impuesto",
+            "total",
+            "observacion",
+            "created_at",
+            "updated_at",
+            "detalles",
+        ]
+    
+    def get_vendedor_nombre(self, obj):
+        if obj.vendedor:
+            return f"{obj.vendedor.first_name} {obj.vendedor.last_name}".strip() or obj.vendedor.username
+        return "Sin asignar"
