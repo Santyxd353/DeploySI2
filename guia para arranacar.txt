@@ -1,0 +1,239 @@
+GUIA PARA ARRANCAR EL PROYECTO DESDE CERO
+
+Luego prueba el frontend:
+- Farmacia 1: `http://farmacia1.localhost:5173`
+- Farmacia 2: `http://farmacia2.localhost:5173`
+- SaaS global: `http://localhost:5173
+
+Objetivo
+- Levantar el entorno completo sin arrastrar datos viejos.
+- Crear dos farmacias tenant: farmacia1 y farmacia2.
+- Dejar un superusuario global para administracion del SaaS.
+- Sembrar los datos base necesarios para probar inventario, carrito, ventas, facturacion y reportes.
+
+Requisitos previos
+- Docker Desktop instalado y en ejecucion.
+- Tener configurado el archivo `.env` en la raiz del proyecto.
+- Tener libre el puerto de PostgreSQL, backend y frontend definidos en `.env`.
+
+1. Limpieza total del entorno anterior
+Si quieres empezar realmente de cero, ejecuta:
+
+```powershell
+docker compose down -v
+```
+
+Esto elimina contenedores y el volumen de PostgreSQL para borrar datos previos.
+
+2. Levantar la base de datos y contenedores
+Primero levanta todo el stack:
+
+```powershell
+docker compose up -d --build
+```
+
+Espera a que PostgreSQL quede sano y el backend arranque correctamente.
+
+3. Aplicar migraciones del proyecto
+Una vez arriba el contenedor del backend:
+
+```powershell
+docker compose exec backend python manage.py migrate
+```
+
+Si el proyecto usa migraciones por esquema tenant, este paso deja listas las tablas base.
+
+4. Crear los planes base del SaaS
+Esto registra o actualiza los planes iniciales:
+
+```powershell
+docker compose exec backend python manage.py bootstrap_saas
+```
+
+5. Crear el superusuario global
+La forma recomendada es crear uno manualmente para que quede solo para administracion general:
+
+```powershell
+docker compose exec backend python manage.py createsuperuser
+```
+
+Usa un correo y password propios. Ese usuario sera el superusuario global del sistema.
+
+Si prefieres una semilla rapida para desarrollo, el proyecto tambien puede crear un admin semilla desde los seeds de productos, pero para Git y para un arranque limpio conviene crear tu propio superusuario.
+
+6. Crear farmacia1 con su propio admin
+Esta farmacia debe tener su propia credencial de acceso, distinta del superusuario global.
+
+```powershell
+docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 1', subdominio='farmacia1', email_admin='admin@farmacia1.local', password='Farmacia1*2026')"
+```
+
+Datos que quedaran creados:
+- schema: `farmacia1`
+- subdomain: `farmacia1`
+- dominio: `farmacia1.localhost`
+- nombre: `Farmacia 1`
+- admin propio: `admin@farmacia1.local`
+- password del admin: `Farmacia1*2026`
+
+7. Crear farmacia2 con su propio admin
+Esta farmacia tambien debe tener credenciales propias.
+
+```powershell
+docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 2', subdominio='farmacia2', email_admin='admin@farmacia2.local', password='Farmacia2*2026')"
+```
+
+Datos que quedaran creados:
+- schema: `farmacia2`
+- subdomain: `farmacia2`
+- dominio: `farmacia2.localhost`
+- nombre: `Farmacia 2`
+- admin propio: `admin@farmacia2.local`
+- password del admin: `Farmacia2*2026`
+
+Importante:
+- El superusuario global sigue siendo independiente de estos admins.
+- Estos admins son los verdaderos usuarios para entrar a cada farmacia desde el frontend.
+- Si cambias el subdominio, el schema se adapta sustituyendo `-` por `_`.
+
+8. Sembrar permisos y roles base
+Necesitas esto antes de probar usuarios, admin, reportes y permisos:
+
+```powershell
+docker compose exec backend python manage.py seed_roles_permisos --all-tenants --sincronizar-usuarios
+```
+
+9. Sembrar usuarios demo si los necesitas para pruebas
+Este paso no es obligatorio si quieres solo tu superusuario global, pero sirve para probar flujos de cliente, cajero y farmacéutico:
+
+```powershell
+docker compose exec backend python manage.py seed_usuarios_demo --all-tenants --password SaludPlus2026* --reset-password
+```
+
+Usuarios que crea/actualiza:
+- `carlos.mendoza@saludplus.com` rol admin
+- `ana.rojas@saludplus.com` rol farmacéutico
+- `luis.torrez@saludplus.com` rol cajero
+- `maria.quispe@saludplus.com` rol cliente
+- `jorge.vargas@saludplus.com` rol cliente
+
+10. Sembrar catálogo e inventario base
+Los productos son datos de tenant. Puedes sembrarlos para todas las farmacias activas de una vez:
+
+```powershell
+docker compose exec backend python manage.py seed_productos --all-tenants
+```
+
+O si prefieres por farmacia:
+
+```powershell
+docker compose exec backend python manage.py seed_productos --schema farmacia1
+docker compose exec backend python manage.py seed_productos --schema farmacia2
+```
+
+11. Sembrar categorías, subcategorías y laboratorios demo
+Si quieres que el catálogo tenga una estructura mas completa (también por tenant):
+
+```powershell
+docker compose exec backend python manage.py seed_categorias_subcategorias_demos --all-tenants
+docker compose exec backend python manage.py seed_laboratorios_demos --all-tenants
+```
+
+12. Sembrar ventas historicas para predicciones/reportes
+
+```powershell
+docker compose exec backend python manage.py seed_ventas_historicas_fijo --all-tenants
+```
+
+13. Sembrar datos demo para reportes
+Si quieres que reportes y graficas tengan contenido demo:
+
+```powershell
+docker compose exec backend python manage.py seed_reportes_demo --all-tenants
+```
+
+14. Corregir secuencias de PostgreSQL si hiciste cargas manuales
+Si en algun momento aparecen errores de clave duplicada en inserts, ejecuta:
+
+```powershell
+docker compose exec backend python manage.py fix_tenant_sequences --schema farmacia1
+docker compose exec backend python manage.py fix_tenant_sequences --schema farmacia2
+```
+
+15. Verificacion final
+Comprueba que el proyecto esta sano:
+
+```powershell
+docker compose exec backend python manage.py check
+```
+
+Luego prueba el frontend:
+- Farmacia 1: `http://farmacia1.localhost:5173`
+- Farmacia 2: `http://farmacia2.localhost:5173`
+- SaaS global: `http://localhost:5173`
+
+16. Flujo recomendado de prueba
+- Entra con el superusuario global para revisar el panel SaaS.
+- Entra a `farmacia1.localhost:5173` con `admin@farmacia1.local` y la clave `   `.
+- Entra a `farmacia2.localhost:5173` con `admin@farmacia2.local` y la clave `Farmacia2*2026`.
+- Verifica inventario, carrito, venta y factura en cada tenant.
+
+Notas importantes
+- No uses el mismo schema para dos farmacias distintas.
+- Si cambias nombres o subdominios, actualiza tambien los comandos de creacion de tenant y de migracion/copia de datos.
+- Si borras el volumen de PostgreSQL, debes repetir toda la secuencia desde migraciones y seeds.
+- El frontend detecta el tenant por subdominio, por eso debes abrirlo con la URL correcta.
+
+Orden minimo recomendado para un arranque limpio
+1. `docker compose down -v`
+2. `docker compose up -d --build`
+3. `docker compose exec backend python manage.py migrate`
+4. `docker compose exec backend python manage.py bootstrap_saas`
+5. `docker compose exec backend python manage.py createsuperuser`
+6. `docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 1', subdominio='farmacia1', email_admin='admin@farmacia1.local', password='Farmacia1*2026')"`
+7. `docker compose exec backend python manage.py shell -c "from tenants.services import create_tenant_with_admin; create_tenant_with_admin(nombre_farmacia='Farmacia 2', subdominio='farmacia2', email_admin='admin@farmacia2.local', password='Farmacia2*2026')"`
+8. `docker compose exec backend python manage.py seed_roles_permisos --all-tenants --sincronizar-usuarios`
+9. `docker compose exec backend python manage.py seed_usuarios_demo --all-tenants --password SaludPlus2026* --reset-password`
+10. `docker compose exec backend python manage.py seed_productos --all-tenants`
+13. `docker compose exec backend python manage.py seed_ventas_historicas_fijo --all-tenants`
+15. `docker compose exec backend python manage.py check`
+
+
+#Si quieres sembrar solo farmacia1, usa esta secuencia:
+
+Crear roles y permisos en farmacia1
+docker compose exec backend python manage.py seed_roles_permisos --schema farmacia1 --sincronizar-usuarios
+
+Crear/actualizar usuarios demo en farmacia1
+docker compose exec backend python manage.py seed_usuarios_demo --schema farmacia1 --password SaludPlus2026* --reset-password
+
+Sembrar productos en farmacia1
+docker compose exec backend python manage.py seed_productos --schema farmacia1
+
+Sembrar categorías y subcategorías demo en farmacia1
+docker compose exec backend python manage.py seed_categorias_subcategorias_demos --schema farmacia1
+
+Sembrar laboratorios demo en farmacia1
+docker compose exec backend python manage.py seed_laboratorios_demos --schema farmacia1
+
+Sembrar ventas históricas en farmacia1
+docker compose exec backend python manage.py seed_ventas_historicas_fijo --schema farmacia1
+
+Sembrar datos demo de reportes en farmacia1
+docker compose exec backend python manage.py seed_reportes_demo --schema farmacia1
+
+Verificación final
+docker compose exec backend python manage.py check 
+
+ENTRENAR MODELO
+docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia1
+docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia2
+
+sembrar 30 registros de entrada para ver todos los estados
+de inventario.
+Para todos las farmacias:
+´docker compose exec backend python manage.py seed_entradas_inventario_estados --all-tenants --total 30´
+
+Para farmacia1:
+`docker compose exec backend python manage.py seed_entradas_inventario_estados --schema farmacia1 --total 30`
+docker compose exec backend python manage.py seed_tratamiento_demo --schema farmacia1

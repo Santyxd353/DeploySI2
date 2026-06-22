@@ -1,38 +1,87 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { adminSections } from "../../data/adminData";
 import {
+  BellIcon,
   ChartBarIcon,
   ChevronDownIcon,
   ClipboardListIcon,
   CogIcon,
   DollarIcon,
   LogOutIcon,
+  MedicalCrossIcon,
   MegaphoneIcon,
   PackageIcon,
+  SaveIcon,
   ShieldIcon,
+  SparkIcon,
+  TruckIcon,
   UserIcon,
   UsersGroupIcon,
 } from "../ui/Icons";
+import { pedidosService } from "../../services/pedidosService";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminLayout({ activeSection, setActiveSection, currentUser, onLogout, children }) {
+  const [noLeidas, setNoLeidas] = useState(0);
+  const [notifs, setNotifs] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const notifsRef = useRef(null);
+  const wsAdminRef = useRef(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showUsersSection, setShowUsersSection] = useState(true);
+  const [showUsersSection, setShowUsersSection] = useState(false);
+  const [showProductsSection, setShowProductsSection] = useState(false);
+  const [showSecuritySection, setShowSecuritySection] = useState(false);
+  const [showInventorySection, setShowInventorySection] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("admin-sidebar-collapsed") === "true";
+  });
   const userMenuRef = useRef(null);
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: authUser, logout: authLogout } = useAuth();
+  const resolvedUser = currentUser ?? authUser;
+  const resolvedLogout = onLogout ?? authLogout;
   const location = useLocation();
   const navigate = useNavigate();
 
   useOutsideClick(userMenuRef, () => setShowUserMenu(false));
+  useOutsideClick(notifsRef, () => setShowNotifs(false));
+
+  const cargarNotifs = useCallback(async () => {
+    try {
+      const [cnt, lista] = await Promise.all([
+        pedidosService.contadorNoLeidas(),
+        pedidosService.notificaciones({ page_size: 8, no_leidas: "true" }),
+      ]);
+      setNoLeidas(cnt.no_leidas ?? 0);
+      setNotifs(lista.results ?? []);
+    } catch {
+      // silencioso
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarNotifs();
+    const token = localStorage.getItem("auth_access_token");
+    if (!token) return;
+    const ws = new WebSocket(pedidosService.wsAdminUrl(token));
+    wsAdminRef.current = ws;
+    ws.onmessage = () => cargarNotifs();
+    return () => ws.close();
+  }, [cargarNotifs]);
+
+  async function handleMarcarTodas() {
+    await pedidosService.marcarTodasLeidas();
+    cargarNotifs();
+  }
 
   const roleLabel = useMemo(() => {
-    if (currentUser?.role === "admin") return "Administrador";
-    if (currentUser?.role === "farmaceutico") return "Farmaceutico";
-    if (currentUser?.role === "cajero") return "Cajero";
+    if (resolvedUser?.role === "admin") return "Administrador";
+    if (resolvedUser?.role === "farmaceutico") return "Farmaceutico";
+    if (resolvedUser?.role === "cajero") return "Cajero";
     return "Cliente";
-  }, [currentUser]);
+  }, [resolvedUser]);
 
   const visibleSections = useMemo(
     () => adminSections.filter((section) => hasPermission(section.requiredPermission)),
@@ -40,6 +89,9 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const userManagementSectionIds = ["users", "roles-permisos"];
+  const productManagementSectionIds = ["products", "labs", "categories"];
+  const securityManagementSectionIds = ["bitacora", "backups"];
+  const inventorySectionId = "inventory";
 
   const activeSectionByPath = useMemo(() => {
     return adminSections.find((section) => section.path === location.pathname)?.id || null;
@@ -63,8 +115,29 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     [visibleSections]
   );
 
+  const productManagementSections = useMemo(
+    () => visibleSections.filter((section) => productManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
+  const securityManagementSections = useMemo(
+    () => visibleSections.filter((section) => securityManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
+  const inventorySection = useMemo(
+    () => visibleSections.find((section) => section.id === inventorySectionId) || null,
+    [visibleSections]
+  );
+
   const regularSections = useMemo(
-    () => visibleSections.filter((section) => !userManagementSectionIds.includes(section.id)),
+    () => visibleSections.filter(
+      (section) =>
+        !userManagementSectionIds.includes(section.id)
+        && !productManagementSectionIds.includes(section.id)
+        && !securityManagementSectionIds.includes(section.id)
+        && section.id !== inventorySectionId
+    ),
     [visibleSections]
   );
 
@@ -79,14 +152,57 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const isUsersSectionActive = userManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isProductsSectionActive = productManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isSecuritySectionActive = securityManagementSections.some((section) => section.id === resolvedActiveSection);
+  const inventoryView = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("view") || "dashboard";
+  }, [location.search]);
+  const isInventorySectionActive = resolvedActiveSection === inventorySectionId;
+
+  useEffect(() => {
+    if (isUsersSectionActive) {
+      setShowUsersSection(true);
+    }
+  }, [isUsersSectionActive]);
+
+  useEffect(() => {
+    if (isProductsSectionActive) {
+      setShowProductsSection(true);
+    }
+  }, [isProductsSectionActive]);
+
+  useEffect(() => {
+    if (isSecuritySectionActive) {
+      setShowSecuritySection(true);
+    }
+  }, [isSecuritySectionActive]);
+
+  useEffect(() => {
+    if (isInventorySectionActive) {
+      setShowInventorySection(true);
+    }
+  }, [isInventorySectionActive]);
+
+  useEffect(() => {
+    if (location.pathname === "/admin/reportes") {
+      setIsSidebarCollapsed(true);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("admin-sidebar-collapsed", String(isSidebarCollapsed));
+    }
+  }, [isSidebarCollapsed]);
 
   const fullName = useMemo(() => {
-    return [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ").trim();
-  }, [currentUser]);
+    return [resolvedUser?.first_name, resolvedUser?.last_name].filter(Boolean).join(" ").trim();
+  }, [resolvedUser]);
 
   const displayName = useMemo(() => {
-    return fullName || currentUser?.username || "Admin";
-  }, [fullName, currentUser]);
+    return fullName || resolvedUser?.username || "Admin";
+  }, [fullName, resolvedUser]);
 
   const initials = useMemo(() => {
     if (fullName) {
@@ -96,10 +212,11 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
       return `${first}${second}`.toUpperCase() || "AD";
     }
 
-    const value = currentUser?.username || "Admin";
+    const value = resolvedUser?.username || "Admin";
     return value.slice(0, 2).toUpperCase();
-  }, [currentUser, fullName]);
+  }, [resolvedUser, fullName]);
 
+  // Mapa de iconos: incluye POS y backups
   const iconMap = {
     dashboard: ChartBarIcon,
     orders: ClipboardListIcon,
@@ -112,15 +229,46 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     reports: ChartBarIcon,
     finance: DollarIcon,
     settings: CogIcon,
+    spark: SparkIcon,
+    pos: DollarIcon,
+    backup: SaveIcon,
+    truck: TruckIcon,
+  };
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => !prev);
   };
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-800">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-5 lg:px-6">
-        <aside className="rounded-[28px] border border-slate-200 bg-white/97 p-4 shadow-md lg:p-5">
+      <div
+        className={`mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 gap-4 px-4 py-4 transition-[grid-template-columns] duration-300 lg:gap-5 lg:px-6 ${
+          isSidebarCollapsed ? "lg:grid-cols-[0_minmax(0,1fr)]" : "lg:grid-cols-[250px_minmax(0,1fr)]"
+        }`}
+      >
+        <aside
+          className={`rounded-[28px] border border-slate-200 bg-white/97 p-4 shadow-md transition-all duration-300 lg:w-[250px] lg:p-5 ${
+            isSidebarCollapsed
+              ? "lg:pointer-events-none lg:-translate-x-[calc(100%+1.25rem)] lg:opacity-0"
+              : "lg:translate-x-0 lg:opacity-100"
+          }`}
+        >
           <div className="mb-5 rounded-2xl bg-gradient-to-r from-teal-700 to-cyan-700 p-4 text-white">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-100">Panel administrativo</p>
-            <h1 className="mt-1 text-lg font-black">Farmacia SaludPlus</h1>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-100">Panel administrativo</p>
+                <h1 className="mt-1 text-lg font-black">Farmacia SaludPlus</h1>
+              </div>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20 lg:inline-flex"
+                aria-label="Ocultar panel administrativo"
+                title="Ocultar panel"
+              >
+                <ChevronDownIcon className="h-4 w-4 rotate-90" />
+              </button>
+            </div>
           </div>
 
           <nav className="space-y-1.5">
@@ -189,8 +337,108 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
               </div>
             ) : null}
 
+            {productManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowProductsSection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isProductsSectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isProductsSectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <PackageIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Productos</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showProductsSection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showProductsSection ? (
+                  <div className="space-y-1 pl-3">
+                    {productManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {inventorySection ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowInventorySection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isInventorySectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isInventorySectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <PackageIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Inventario</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showInventorySection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showInventorySection ? (
+                  <div className="space-y-1 pl-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/admin/inventarios?view=dashboard")}
+                      className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                        isInventorySectionActive && inventoryView === "dashboard"
+                          ? "border-teal-600 bg-teal-50 text-teal-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="truncate">Dashboard</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/admin/inventarios?view=entradas")}
+                      className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                        isInventorySectionActive && inventoryView === "entradas"
+                          ? "border-teal-600 bg-teal-50 text-teal-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="truncate">Entrada de inventario</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/admin/inventarios?view=stock")}
+                      className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                        isInventorySectionActive && inventoryView === "stock"
+                          ? "border-teal-600 bg-teal-50 text-teal-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="truncate">Inventario (stock)</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {otherRegularSections.map((section) => {
-              const Icon = iconMap[section.icon] || ShieldIcon;
+              const Icon = section.id === "treatments" ? MedicalCrossIcon : iconMap[section.icon] || ShieldIcon;
               const isActive = resolvedActiveSection === section.id;
 
               return (
@@ -211,16 +459,123 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                 </button>
               );
             })}
+
+            {securityManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSecuritySection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isSecuritySectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isSecuritySectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <ShieldIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Seguridad</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showSecuritySection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showSecuritySection ? (
+                  <div className="space-y-1 pl-3">
+                    {securityManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </nav>
         </aside>
 
-        <section className="space-y-4">
+        <section className="min-w-0 space-y-4">
           <header className="rounded-[28px] border border-slate-200 bg-white/97 p-4 shadow-md sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 lg:inline-flex"
+                  aria-label={isSidebarCollapsed ? "Mostrar panel administrativo" : "Ocultar panel administrativo"}
+                  title={isSidebarCollapsed ? "Mostrar panel" : "Ocultar panel"}
+                >
+                  <ChevronDownIcon className={`h-5 w-5 transition-transform ${isSidebarCollapsed ? "-rotate-90" : "rotate-90"}`} />
+                </button>
+
+                <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Backoffice</p>
                 <h2 className="text-xl font-black text-slate-900">Gestion operativa</h2>
+                </div>
               </div>
+              {/* Campanita de notificaciones */}
+              <div className="relative" ref={notifsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifs((p) => !p)}
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300"
+                  aria-label="Notificaciones"
+                >
+                  <BellIcon className="h-5 w-5 text-slate-600" />
+                  {noLeidas > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-black text-white">
+                      {noLeidas > 9 ? "9+" : noLeidas}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifs && (
+                  <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <p className="text-xs font-bold text-slate-800">Notificaciones</p>
+                      {noLeidas > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMarcarTodas}
+                          className="text-xs font-semibold text-teal-600 hover:underline"
+                        >
+                          Marcar todas leídas
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifs.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-xs text-slate-400">Sin notificaciones nuevas</p>
+                      ) : notifs.map((n) => (
+                        <div key={n.id} className="px-4 py-3 hover:bg-slate-50">
+                          <p className="text-xs font-semibold text-slate-800">{n.titulo}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{n.mensaje}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-slate-100 px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => { navigate("/admin/pedidos"); setShowNotifs(false); }}
+                        className="w-full rounded-xl py-1.5 text-xs font-semibold text-teal-600 hover:bg-teal-50 transition"
+                      >
+                        Ver todos los pedidos
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"
@@ -241,7 +596,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                   <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
                     <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
                       <p className="text-xs font-bold text-slate-800">{displayName}</p>
-                      <p className="text-[11px] text-slate-500">{currentUser?.email || "Sin correo"}</p>
+                      <p className="text-[11px] text-slate-500">{resolvedUser?.email || "Sin correo"}</p>
                     </div>
                     <div className="p-1.5">
                       <button
@@ -260,7 +615,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                       </button>
                       <button
                         type="button"
-                        onClick={onLogout}
+                        onClick={resolvedLogout}
                         className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
                       >
                         <LogOutIcon className="h-4 w-4" />

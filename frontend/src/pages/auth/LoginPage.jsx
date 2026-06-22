@@ -9,20 +9,26 @@ import { EyeIcon, EyeOffIcon } from "../../components/ui/Icons";
 import { getErrorMessage } from "../../lib/utils";
 import { loginUser } from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
+import { getTenantSubdomain } from "../../services/apiClient";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { user, loading, login } = useAuth();
+  const tenantSubdomain = getTenantSubdomain();
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!tenantSubdomain) {
+      navigate("/saas/login", { replace: true });
+      return;
+    }
     if (!loading && user) {
       navigate(user.can_access_admin ? "/admin" : "/", { replace: true });
     }
-  }, [loading, user, navigate]);
+  }, [loading, user, navigate, tenantSubdomain]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -31,7 +37,7 @@ export default function LoginPage() {
 
     try {
       const data = await loginUser(form);
-      login(data.user);
+      login(data.user, null, { access: data.access, refresh: data.refresh });
       navigate(data.user.can_access_admin ? "/admin" : "/", { replace: true });
     } catch (errorData) {
       setError(getErrorMessage(errorData, "No se pudo iniciar sesion."));

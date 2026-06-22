@@ -16,14 +16,7 @@ export default function HeroBanner() {
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600 sm:text-base">
             Encuentra medicamentos, cuidado personal y productos de bienestar con una experiencia simple y confiable.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button className="bg-teal-700 hover:bg-teal-600">
-              Comprar ahora
-            </Button>
-            <Button variant="secondary" className="border-sky-300 text-sky-700 hover:bg-sky-50">
-              Ver ofertas
-            </Button>
-          </div>
+          
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">

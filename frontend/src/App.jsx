@@ -1,53 +1,121 @@
 import { lazy, Suspense } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/routing/ProtectedRoute";
 import AdminRoute from "./components/routing/AdminRoute";
+import POSRoute from "./components/routing/POSRoute";
 import PageLoader from "./components/routing/PageLoader";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { getTenantSubdomain } from "./services/apiClient";
 
 // Lazy-loaded pages
 const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
 const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
 const AdminRolesPermisosPage = lazy(() => import("./pages/admin/AdminRolesPermisosPage"));
 const AdminInventariosPage = lazy(() => import("./pages/admin/AdminInventariosPage"));
+const InventoryProductDetailPage = lazy(() => import("./pages/admin/InventoryProductDetailPage"));
 const AdminProductosPage = lazy(() => import("./pages/admin/AdminProductosPage"));
+const AdminLaboratariosPage = lazy(() => import("./pages/admin/AdminLaboratoriosPage"));
+const AdminCategoriasPage = lazy(() => import("./pages/admin/AdminCategoriasPage"));
 const AdminClientesPage = lazy(() => import("./pages/admin/AdminClientesPage"));
+const AdminPuntosPage = lazy(() => import("./pages/admin/AdminPuntosPage"));
+const RecetasPage = lazy(() => import("./pages/admin/RecetasPage"));
+const AdminBitacoraPage = lazy(() => import("./pages/admin/AdminBitacoraPage"));
+const AdminBackupsPage = lazy(() => import("./pages/admin/AdminBackupsPage"));
+const AdminPrediccionesPage = lazy(() => import("./pages/admin/AdminPrediccionesPage"));
+const AdminReportesPage = lazy(() => import("./pages/admin/AdminReportesPage"));
+const AdminTratamientosPage = lazy(() => import("./pages/admin/AdminTratamientosPage"));
 const ClientePerfilPage = lazy(() => import("./pages/ClientePerfilPage"));
+const MisComprasPage = lazy(() => import("./pages/MisComprasPage"));
+const MisPuntosPage = lazy(() => import("./pages/MisPuntosPage"));
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"));
 const VerifyEmailPage = lazy(() => import("./pages/auth/VerifyEmailPage"));
+const POSPage = lazy(() => import("./pages/pos/POSPage"));
+const CheckoutPage = lazy(() => import("./pages/CheckoutPage"));
+const SaaSLandingPage = lazy(() => import("./pages/saas/SaaSLandingPage"));
+const RegisterTenantPage = lazy(() => import("./pages/saas/RegisterTenantPage"));
+const GlobalLoginPage = lazy(() => import("./pages/saas/GlobalLoginPage"));
+const TenantSubscriptionPage = lazy(() => import("./pages/admin/TenantSubscriptionPage"));
+const GlobalTenantsPage = lazy(() => import("./pages/admin/GlobalTenantsPage"));
+const SegmentacionClientesPage = lazy(() => import("./pages/admin/SegmentacionClientesPage"));
+const AdminOpinionesPage = lazy(() => import("./pages/admin/AdminOpinionesPage"));
+const AdminPublicidadPage = lazy(() => import("./pages/admin/AdminPublicidadPage"));
+const AdminLimitesDispensacionPage = lazy(() => import("./pages/admin/AdminLimitesDispensacionPage"));
+const AdminPedidosPage = lazy(() => import("./pages/admin/AdminPedidosPage"));
+const AdminKpisPage = lazy(() => import("./pages/admin/AdminKpisPage"));
+const GlobalOverviewPage = lazy(() => import("./pages/admin/GlobalOverviewPage"));
+const GlobalSuscripcionesPage = lazy(() => import("./pages/admin/GlobalSuscripcionesPage"));
+const GlobalPlanesPage = lazy(() => import("./pages/admin/GlobalPlanesPage"));
 
 function App() {
+  const hasTenantSubdomain = Boolean(getTenantSubdomain());
+
   return (
     <BrowserRouter>
       <AuthProvider>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
+            {/* Rutas públicas */}
+            <Route path="/" element={hasTenantSubdomain ? <HomePage /> : <SaaSLandingPage />} />
+            <Route path="/saas/register-farmacia" element={<RegisterTenantPage />} />
+            <Route path="/saas/login" element={<GlobalLoginPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
 
-        <Route element={<ProtectedRoute />}>
-          <Route path="/perfil" element={<ClientePerfilPage />} />
-        </Route>
+            {/* Rutas protegidas para clientes */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/perfil" element={<ClientePerfilPage />} />
+              <Route path="/mis-compras" element={<MisComprasPage />} />
+              <Route path="/mis-puntos" element={<MisPuntosPage />} />
+            </Route>
 
-        <Route element={<AdminRoute />}>
-          <Route path="/admin" element={<Navigate to="/admin/resumen" replace />} />
-          <Route path="/admin/resumen" element={<AdminDashboardPage />} />
-          <Route path="/admin/usuarios" element={<AdminUsersPage />} />
-          <Route path="/admin/roles-permisos" element={<AdminRolesPermisosPage />} />
-          <Route path="/admin/inventarios" element={<AdminInventariosPage />} />
-          <Route path="/admin/productos" element={<AdminProductosPage />} />
-          <Route path="/admin/clientes" element={<AdminClientesPage />} />
-        </Route>
+            {/* Rutas de administración */}
+            <Route element={<AdminRoute />}>
+              <Route path="/admin" element={<Navigate to="/admin/resumen" replace />} />
+              <Route path="/admin/resumen" element={<AdminDashboardPage />} />
+              <Route path="/admin/usuarios" element={<AdminUsersPage />} />
+              <Route path="/admin/roles-permisos" element={<AdminRolesPermisosPage />} />
+              <Route path="/admin/inventarios" element={<AdminInventariosPage />} />
+              <Route path="/admin/inventarios/producto/:id" element={<InventoryProductDetailPage />} />
+              <Route path="/admin/productos" element={<AdminProductosPage />} />
+              <Route path="/admin/categorias" element={<AdminCategoriasPage />} />
+              <Route path="/admin/laboratorios" element={<AdminLaboratariosPage />} />
+              <Route path="/admin/clientes" element={<AdminClientesPage />} />
+              <Route path="/admin/puntos" element={<AdminPuntosPage />} />
+              <Route path="/admin/recetas" element={<RecetasPage />} />
+              <Route path="/admin/bitacora" element={<AdminBitacoraPage />} />
+              <Route path="/admin/backups" element={<AdminBackupsPage />} />
+              <Route path="/admin/predicciones" element={<AdminPrediccionesPage />} />
+              <Route path="/admin/reportes" element={<AdminReportesPage />} />
+              <Route path="/admin/tratamientos" element={<AdminTratamientosPage />} />
+              <Route path="/admin/suscripcion" element={<TenantSubscriptionPage />} />
+              <Route path="/admin/kpis" element={<AdminKpisPage />} />
+              <Route path="/admin/global" element={<Navigate to="/admin/global/overview" replace />} />
+              <Route path="/admin/global/overview" element={<GlobalOverviewPage />} />
+              <Route path="/admin/global/tenants" element={<GlobalTenantsPage />} />
+              <Route path="/admin/global/suscripciones" element={<GlobalSuscripcionesPage />} />
+              <Route path="/admin/global/planes" element={<GlobalPlanesPage />} />
+              <Route path="/admin/segmentacion-clientes" element={<SegmentacionClientesPage />} />
+              <Route path="/admin/opiniones" element={<AdminOpinionesPage />} />
+              <Route path="/admin/publicidad" element={<AdminPublicidadPage />} />
+              <Route path="/admin/limites-dispensacion" element={<AdminLimitesDispensacionPage />} />
+              <Route path="/admin/pedidos" element={<AdminPedidosPage />} />
+            </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+            {/* Punto de venta (POS) */}
+            <Route element={<POSRoute />}>
+              <Route path="/pos" element={<POSPage />} />
+            </Route>
+
+            {/* Ruta comodín */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </AuthProvider>

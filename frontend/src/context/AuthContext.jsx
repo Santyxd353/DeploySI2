@@ -3,14 +3,17 @@ import {
   canAccessAdmin,
   clearSession,
   getCurrentUser,
+  getStoredTenant,
   logoutUser,
   saveSession,
+  saveTenantSession,
 } from "../services/authService";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [tenant, setTenant] = useState(() => getStoredTenant());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,8 +29,12 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback((userData) => {
-    saveSession({ user: userData });
+  const login = useCallback((userData, tenantData = null, tokens = null) => {
+    saveSession({ user: userData, access: tokens?.access, refresh: tokens?.refresh });
+    if (tenantData) {
+      saveTenantSession(tenantData);
+      setTenant(tenantData);
+    }
     setUser(userData);
   }, []);
 
@@ -39,6 +46,7 @@ export function AuthProvider({ children }) {
     }
     clearSession();
     setUser(null);
+    setTenant(null);
   }, []);
 
   const isAdmin = canAccessAdmin(user);
@@ -54,7 +62,7 @@ export function AuthProvider({ children }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, permissions, hasPermission }}>
+    <AuthContext.Provider value={{ user, tenant, loading, login, logout, isAdmin, permissions, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

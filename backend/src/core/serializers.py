@@ -16,6 +16,7 @@ from .rbac import (
     obtener_rol_usuario,
     puede_acceder_backoffice,
 )
+from .models import BitacoraSistema
 
 
 def _generate_unique_username(email):
@@ -27,6 +28,15 @@ def _generate_unique_username(email):
         candidate = f"{base}{index}"
         index += 1
     return candidate
+
+
+def _tenant_from_context(serializer_instance):
+    request = serializer_instance.context.get("request") if serializer_instance.context else None
+    if request is not None and getattr(request, "tenant", None) is not None:
+        return getattr(request, "tenant", None)
+    if serializer_instance.context:
+        return serializer_instance.context.get("tenant")
+    return None
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -47,10 +57,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         return normalized
 
     def create(self, validated_data):
+        from django.conf import settings
+
         user_model = get_user_model()
         validated_data["username"] = _generate_unique_username(validated_data["email"])
         user = user_model.objects.create_user(**validated_data)
-        user.is_active = False
+        user.is_active = settings.DEBUG
         user.save(update_fields=["is_active"])
         return user
 
@@ -65,13 +77,13 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ("id", "username", "first_name", "last_name", "email", "role", "can_access_admin", "permisos")
 
     def get_role(self, obj):
-        return obtener_rol_usuario(obj)
+        return obtener_rol_usuario(obj, tenant=_tenant_from_context(self))
 
     def get_can_access_admin(self, obj):
-        return puede_acceder_backoffice(obj)
+        return puede_acceder_backoffice(obj, tenant=_tenant_from_context(self))
 
     def get_permisos(self, obj):
-        return obtener_permisos_usuario(obj)
+        return obtener_permisos_usuario(obj, tenant=_tenant_from_context(self))
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -98,13 +110,13 @@ class AdminUserSerializer(serializers.ModelSerializer):
         )
 
     def get_role(self, obj):
-        return obtener_rol_usuario(obj)
+        return obtener_rol_usuario(obj, tenant=_tenant_from_context(self))
 
     def get_can_access_admin(self, obj):
-        return puede_acceder_backoffice(obj)
+        return puede_acceder_backoffice(obj, tenant=_tenant_from_context(self))
 
     def get_permisos(self, obj):
-        return obtener_permisos_usuario(obj)
+        return obtener_permisos_usuario(obj, tenant=_tenant_from_context(self))
 
 
 class AdminUserUpdateSerializer(serializers.Serializer):
@@ -296,3 +308,37 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
         validate_password(attrs["password"])
         return attrs
+
+
+class BitacoraSistemaSerializer(serializers.ModelSerializer):
+    usuario_email = serializers.EmailField(source="usuario.email", read_only=True, allow_null=True)
+    usuario_nombre = serializers.CharField(source="usuario.first_name", read_only=True, allow_null=True)
+    usuario_apellido = serializers.CharField(source="usuario.last_name", read_only=True, allow_null=True)
+    usuario_rol = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BitacoraSistema
+        fields = (
+            "id",
+            "fecha_hora",
+            "usuario",
+            "usuario_email",
+            "usuario_nombre",
+            "usuario_apellido",
+            "usuario_rol",
+            "accion",
+            "modulo",
+            "entidad",
+            "entidad_id",
+            "resultado",
+            "mensaje",
+            "ip_origen",
+            "navegador",
+            "ruta",
+            "metodo_http",
+        )
+
+    def get_usuario_rol(self, obj):
+        if not obj.usuario:
+            return None
+        return obtener_rol_usuario(obj.usuario)

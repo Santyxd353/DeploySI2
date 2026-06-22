@@ -9,10 +9,12 @@ import { EyeIcon, EyeOffIcon } from "../../components/ui/Icons";
 import { getErrorMessage } from "../../lib/utils";
 import { registerUser } from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
+import { getTenantSubdomain } from "../../services/apiClient";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const tenantSubdomain = getTenantSubdomain();
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -20,10 +22,14 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!tenantSubdomain) {
+      navigate("/saas/register-farmacia", { replace: true });
+      return;
+    }
     if (!loading && user) {
       navigate(user.can_access_admin ? "/admin" : "/", { replace: true });
     }
-  }, [loading, user, navigate]);
+  }, [loading, user, navigate, tenantSubdomain]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();

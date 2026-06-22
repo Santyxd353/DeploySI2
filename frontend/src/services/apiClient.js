@@ -1,32 +1,31 @@
-function resolveApiBaseUrl() {
-  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
-
-  if (typeof window === "undefined") {
-    return configuredBaseUrl || "http://localhost:8000";
-  }
-
-  const currentHost = window.location.hostname;
-  const defaultBaseUrl = `http://${currentHost}:8000`;
-
-  if (!configuredBaseUrl) {
-    return defaultBaseUrl;
-  }
-
-  try {
-    const url = new URL(configuredBaseUrl);
-    if (
-      ["localhost", "127.0.0.1"].includes(url.hostname) &&
-      ["localhost", "127.0.0.1"].includes(currentHost)
-    ) {
-      url.hostname = currentHost;
-    }
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return configuredBaseUrl;
-  }
+function normalizeApiBaseUrl(rawValue) {
+  const base = (rawValue || "http://localhost:8000").trim().replace(/\/+$/, "");
+  // If env already includes /api, avoid generating /api/api/... when endpoints also start with /api.
+  return base.replace(/\/api$/i, "");
 }
 
-const API_BASE_URL = resolveApiBaseUrl();
+const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const ROOT_DOMAIN = import.meta.env.VITE_ROOT_DOMAIN || "localhost";
+const ACCESS_TOKEN_KEY = "auth_access_token";
+const REFRESH_TOKEN_KEY = "auth_refresh_token";
+let refreshInFlightPromise = null;
+
+function detectTenantSubdomain(hostname = window.location.hostname) {
+  const host = (hostname || "").toLowerCase();
+  if (!host) return "";
+
+  if (host.endsWith(".localhost")) {
+    const parts = host.split(".");
+    return parts.length > 1 ? parts[0] : "";
+  }
+
+  if (ROOT_DOMAIN && host.endsWith(`.${ROOT_DOMAIN}`)) {
+    const sub = host.slice(0, host.length - (`.${ROOT_DOMAIN}`).length);
+    return sub && sub !== "www" ? sub : "";
+  }
+
+  return "";
+}
 
 function buildUrl(endpoint) {
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
@@ -37,11 +36,60 @@ export function getApiBaseUrl() {
   return API_BASE_URL;
 }
 
+function getStoredAccessToken() {
+  return localStorage.getItem(ACCESS_TOKEN_KEY) || "";
+}
+
+function getStoredRefreshToken() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || "";
+}
+
+function setStoredAccessToken(token) {
+  if (!token) {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    return;
+  }
+  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+}
+
+export function setAuthTokens({ access, refresh } = {}) {
+  setStoredAccessToken(access || "");
+  if (refresh) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+  }
+}
+
+export function clearAuthTokens() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
 export async function request(endpoint, init = {}) {
+  const tenantSubdomain = detectTenantSubdomain();
+  const headers = new Headers(init.headers || {});
+  const token = getStoredAccessToken();
+
+  if (token) {
+    const currentAuth = headers.get("Authorization") || "";
+    // Always prefer the latest stored bearer token to avoid retrying with stale auth.
+    if (!currentAuth || /^Bearer\s+/i.test(currentAuth)) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+
+  if (tenantSubdomain) {
+    headers.set("X-Tenant-Subdomain", tenantSubdomain);
+  }
+
   return fetch(buildUrl(endpoint), {
     credentials: "include",
     ...init,
+    headers,
   });
+}
+
+export function getTenantSubdomain() {
+  return detectTenantSubdomain();
 }
 
 async function safeParseJson(response) {
@@ -53,17 +101,38 @@ async function safeParseJson(response) {
 }
 
 async function refreshAuthSession() {
-  const response = await request("/api/auth/refresh/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-
-  if (!response.ok) {
-    throw new Error("No se pudo refrescar la sesion.");
+  if (refreshInFlightPromise) {
+    return refreshInFlightPromise;
   }
 
-  return safeParseJson(response);
+  const refresh = getStoredRefreshToken();
+  refreshInFlightPromise = (async () => {
+    const response = await request("/api/auth/refresh/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(refresh ? { refresh } : {}),
+    });
+
+    if (!response.ok) {
+      throw new Error("No se pudo refrescar la sesion.");
+    }
+
+    const data = await safeParseJson(response);
+    if (data?.access) {
+      setStoredAccessToken(data.access);
+    }
+    if (data?.refresh) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+    }
+
+    return data;
+  })();
+
+  try {
+    return await refreshInFlightPromise;
+  } finally {
+    refreshInFlightPromise = null;
+  }
 }
 
 export async function requestWithAuthRetry(endpoint, init = {}) {

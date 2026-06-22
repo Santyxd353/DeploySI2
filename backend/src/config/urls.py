@@ -1,8 +1,1 @@
-from django.contrib import admin
-from django.urls import include, path
-
-urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("api/", include("core.urls")),
-    path("api/inventarios/", include("inventarios.urls")),
-]
+from .tenant_urls import urlpatterns  # Backward compatibility entrypoint

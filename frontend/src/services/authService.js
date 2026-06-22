@@ -1,13 +1,36 @@
-import { getApiBaseUrl, requestJson, requestWithAuthRetry } from "./apiClient";
+import { clearAuthTokens, getApiBaseUrl, getTenantSubdomain, requestJson, requestWithAuthRetry, setAuthTokens } from "./apiClient";
 
-export function saveSession({ user }) {
+export function saveSession({ user, access, refresh }) {
   if (user) {
     localStorage.setItem("current_user", JSON.stringify(user));
+  }
+  setAuthTokens({ access, refresh });
+}
+
+export function saveTenantSession(tenant) {
+  if (tenant) {
+    localStorage.setItem("current_tenant", JSON.stringify(tenant));
+  }
+}
+
+export function clearTenantSession() {
+  localStorage.removeItem("current_tenant");
+}
+
+export function getStoredTenant() {
+  const raw = localStorage.getItem("current_tenant");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
 export function clearSession() {
   localStorage.removeItem("current_user");
+  clearTenantSession();
+  clearAuthTokens();
 }
 
 export function getStoredUser() {
@@ -34,10 +57,55 @@ export async function registerUser(payload) {
 }
 
 export async function loginUser(payload) {
+  const subdomain = getTenantSubdomain();
   return requestJson("/api/auth/login/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, subdominio: subdomain || undefined }),
+  });
+}
+
+export async function registerTenant(payload) {
+  return requestJson("/api/tenants/public/register-tenant/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function globalLogin(payload) {
+  return requestJson("/api/tenants/public/login/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getPublicPlans() {
+  return requestJson("/api/tenants/public/plans/", { method: "GET" });
+}
+
+export async function getCurrentTenantSubscription() {
+  return requestJson("/api/tenants/billing/current/", { method: "GET" });
+}
+
+export async function startTenantCheckout({ plan_slug, billing_cycle }) {
+  return requestJson("/api/tenants/billing/checkout/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan_slug, billing_cycle }),
+  });
+}
+
+export async function getGlobalTenants() {
+  return requestJson("/api/tenants/global/tenants/", { method: "GET" });
+}
+
+export async function updateGlobalTenantStatus(tenantId, status) {
+  return requestJson(`/api/tenants/global/tenants/${tenantId}/status/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
   });
 }
 

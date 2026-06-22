@@ -99,6 +99,14 @@ export function ChevronDownIcon({ className }) {
   );
 }
 
+export function ChevronRightIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m9 18 6-6-6-6" />
+    </BaseIcon>
+  );
+}
+
 export function ShieldIcon({ className }) {
   return (
     <BaseIcon className={className}>
@@ -123,6 +131,15 @@ export function EyeIcon({ className }) {
     <BaseIcon className={className}>
       <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
       <circle cx="12" cy="12" r="3" />
+    </BaseIcon>
+  );
+}
+
+export function PencilIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
     </BaseIcon>
   );
 }
@@ -232,5 +249,168 @@ export function BackIcon({ className }) {
     >
       <path d="M15 18 9 12 15 6" />
     </svg>
+  );
+}
+
+export function CalendarIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <path d="M16 2v4" />
+      <path d="M8 2v4" />
+      <path d="M3 10h18" />
+    </BaseIcon>
+  );
+}
+
+export function FilterIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4 7h16" />
+      <path d="M6 11h12" />
+      <path d="M8 15h8" />
+    </BaseIcon>
+  );
+}
+
+export function DatabaseIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <ellipse cx="12" cy="6" rx="8" ry="3" />
+      <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+      <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </BaseIcon>
+  );
+}
+
+export function SaveIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
+    </BaseIcon>
+  );
+}
+
+export function LoaderIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+    </BaseIcon>
+  );
+}
+
+export function CheckCircleIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </BaseIcon>
+  );
+}
+
+export function AlertTriangleIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </BaseIcon>
+  );
+}
+
+export function MedicalCrossIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" />
+    </BaseIcon>
+  );
+}
+
+export function HistoryIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </BaseIcon>
+  );
+}
+
+export function RestoreIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M9 12h6" />
+      <path d="M12 9v6" />
+    </BaseIcon>
+  );
+}
+
+
+// ... después de RestoreIcon ...
+
+export function DownloadIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </BaseIcon>
+  );
+}
+
+export function TrendingUp({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </BaseIcon>
+  );
+}
+
+export function TrendingDown({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
+      <polyline points="17 18 23 18 23 12" />
+    </BaseIcon>
+  );
+}
+
+export function Minus({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </BaseIcon>
+  );
+}
+
+export function BellIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </BaseIcon>
+  );
+}
+
+
+export function CheckIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <polyline points="20 6 9 17 4 12" />
+    </BaseIcon>
+  );
+}
+
+export function XIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </BaseIcon>
   );
 }
