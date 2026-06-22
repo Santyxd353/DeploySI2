@@ -80,6 +80,9 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
 
 class VentaSerializer(serializers.ModelSerializer):
     detalles = DetalleVentaSerializer(many=True, read_only=True)
+    cliente_detalle = serializers.SerializerMethodField()
+    vendedor_detalle = serializers.SerializerMethodField()
+    factura_detalle = serializers.SerializerMethodField()
 
     class Meta:
         model = Venta
@@ -98,5 +101,48 @@ class VentaSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "detalles",
+            "cliente_detalle",
+            "vendedor_detalle",
+            "factura_detalle",
         ]
         read_only_fields = ["stripe_payment_intent_id"]
+
+    def get_cliente_detalle(self, obj):
+        cliente = getattr(obj, "cliente", None)
+        if cliente is None:
+            return None
+        return {
+            "id": cliente.id,
+            "nombres": cliente.nombres,
+            "apellidos": cliente.apellidos,
+            "email": cliente.email,
+            "telefono": cliente.telefono,
+            "ci_nit": cliente.ci_nit,
+            "tipo": cliente.tipo,
+        }
+
+    def get_vendedor_detalle(self, obj):
+        vendedor = getattr(obj, "vendedor", None)
+        if vendedor is None:
+            return None
+        nombre = " ".join([vendedor.first_name or "", vendedor.last_name or ""]).strip()
+        return {
+            "id": vendedor.id,
+            "nombre": nombre or vendedor.email or vendedor.username,
+            "email": vendedor.email,
+        }
+
+    def get_factura_detalle(self, obj):
+        try:
+            factura = obj.factura
+        except Exception:
+            return None
+        return {
+            "id": factura.id,
+            "numero": factura.numero_factura,
+            "tipo": factura.tipo,
+            "nombre_cliente": factura.nombre_cliente,
+            "email_cliente": factura.email_cliente,
+            "nit_ci": factura.nit_ci,
+            "fecha_emision": factura.fecha_emision,
+        }

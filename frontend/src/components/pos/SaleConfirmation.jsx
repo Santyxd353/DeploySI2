@@ -13,6 +13,8 @@ function useDebounce(value, delay) {
 }
 
 export default function SaleConfirmation({ cart, totals, processing, onConfirm, onCancel }) {
+  const [paymentMethod, setPaymentMethod] = useState("qr");
+  const [cashReceived, setCashReceived] = useState("");
   const [ciNit, setCiNit] = useState("");
   const [nombres, setNombres] = useState("");
   const [apellidos, setApellidos] = useState("");
@@ -75,7 +77,21 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
       .finally(() => setLoadingRecetas(false));
   }, [clienteIdNum, hasRxItems, recetasKey]);
 
-  const confirmBlocked = hasRxItems && (!clienteIdNum || !selectedRecetaId);
+  const totalAmount = Number(totals.total || 0);
+  const cashReceivedNumber = Number(String(cashReceived).replace(",", "."));
+  const isCashPayment = paymentMethod === "efectivo";
+  const hasValidCashAmount = Number.isFinite(cashReceivedNumber) && cashReceivedNumber >= totalAmount;
+  const cashChange = hasValidCashAmount ? cashReceivedNumber - totalAmount : 0;
+  const cashBlocked = isCashPayment && !hasValidCashAmount;
+  const confirmBlocked = (hasRxItems && (!clienteIdNum || !selectedRecetaId)) || cashBlocked;
+
+  const cashSuggestions = useMemo(() => {
+    const roundedToTen = Math.ceil(totalAmount / 10) * 10;
+    const roundedToFifty = Math.ceil(totalAmount / 50) * 50;
+    return Array.from(new Set([totalAmount, roundedToTen, roundedToFifty]))
+      .filter((value) => value >= totalAmount)
+      .slice(0, 3);
+  }, [totalAmount]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -88,7 +104,13 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
             apellidos: apellidos.trim() || "Mostrador",
           },
         };
-    onConfirm({ ...base, selectedRecetaId: selectedRecetaId ? Number(selectedRecetaId) : null });
+    onConfirm({
+      ...base,
+      paymentMethod,
+      cashReceived: isCashPayment ? cashReceivedNumber : null,
+      cashChange: isCashPayment ? cashChange : null,
+      selectedRecetaId: selectedRecetaId ? Number(selectedRecetaId) : null,
+    });
   };
 
   const fullName = clienteEncontrado
@@ -97,7 +119,7 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-lg rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+      <div className="mx-4 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-black text-slate-900">Confirmar venta</h2>
           <button type="button" onClick={onCancel} className="text-slate-400 transition hover:text-slate-600">
@@ -147,6 +169,89 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
           </div>
 
           {/* Identificación del cliente */}
+          <div className="border-t border-slate-100 px-6 py-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Elige metodo de pago
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("qr")}
+                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  paymentMethod === "qr"
+                    ? "border-teal-500 bg-teal-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:bg-slate-50"
+                }`}
+              >
+                <span className="block text-sm font-black text-slate-900">QR simulado</span>
+                <span className="mt-1 block text-xs font-semibold text-slate-500">Muestra QR antes de cobrar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentMethod("efectivo");
+                  if (!cashReceived) setCashReceived(totalAmount.toFixed(2));
+                }}
+                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  paymentMethod === "efectivo"
+                    ? "border-teal-500 bg-teal-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:bg-slate-50"
+                }`}
+              >
+                <span className="block text-sm font-black text-slate-900">Efectivo</span>
+                <span className="mt-1 block text-xs font-semibold text-slate-500">Confirma venta directa</span>
+              </button>
+            </div>
+
+            {isCashPayment ? (
+              <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-emerald-800">
+                      Monto recibido
+                    </label>
+                    <input
+                      type="number"
+                      min={totalAmount.toFixed(2)}
+                      step="0.01"
+                      value={cashReceived}
+                      onChange={(e) => setCashReceived(e.target.value)}
+                      placeholder={`Minimo Bs ${totalAmount.toFixed(2)}`}
+                      className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                    />
+                  </div>
+                  <div className="rounded-xl bg-white px-4 py-3 text-right shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Cambio</p>
+                    <p className={`text-lg font-black ${hasValidCashAmount ? "text-emerald-700" : "text-rose-600"}`}>
+                      Bs {cashChange.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {cashSuggestions.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setCashReceived(value.toFixed(2))}
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-black text-emerald-800 transition hover:border-emerald-400 hover:bg-emerald-100"
+                    >
+                      Bs {value.toFixed(2)}
+                    </button>
+                  ))}
+                </div>
+                {cashBlocked ? (
+                  <p className="mt-3 text-xs font-bold text-rose-600">
+                    El monto recibido debe ser igual o mayor al total para calcular el cambio.
+                  </p>
+                ) : (
+                  <p className="mt-3 text-xs font-semibold text-emerald-700">
+                    Cambio calculado automaticamente para entregar al cliente.
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+
           <div className="border-t border-slate-100 px-6 py-4 space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Datos del cliente
@@ -207,7 +312,9 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
             {!clienteEncontrado && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Nombres</label>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    Nombres <span className="text-slate-400">- opcional</span>
+                  </label>
                   <input
                     type="text"
                     value={nombres}
@@ -217,7 +324,9 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Apellidos</label>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    Apellidos <span className="text-slate-400">- opcional</span>
+                  </label>
                   <input
                     type="text"
                     value={apellidos}
@@ -303,14 +412,20 @@ export default function SaleConfirmation({ cart, totals, processing, onConfirm, 
               disabled={processing || confirmBlocked}
               title={
                 confirmBlocked
-                  ? !clienteIdNum
+                  ? cashBlocked
+                    ? "Ingrese el monto recibido para calcular el cambio"
+                    : !clienteIdNum
                     ? "Ingrese el CI/NIT del cliente para continuar"
                     : "Seleccione una receta vigente para continuar"
                   : undefined
               }
               className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:from-emerald-500 hover:to-teal-500 disabled:opacity-60"
             >
-              {processing ? "Procesando..." : `Confirmar venta — Bs ${totals.total.toFixed(2)}`}
+              {processing
+                ? "Procesando..."
+                : paymentMethod === "qr"
+                  ? `Generar QR - Bs ${totals.total.toFixed(2)}`
+                  : `Confirmar efectivo - Cambio Bs ${cashChange.toFixed(2)}`}
             </button>
           </div>
         </form>

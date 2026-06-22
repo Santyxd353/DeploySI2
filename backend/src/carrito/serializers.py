@@ -23,6 +23,8 @@ class CarritoConfirmarSerializer(serializers.Serializer):
     impuesto = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
     observacion = serializers.CharField(required=False, allow_blank=True)
     recetas = RecetaConfirmacionSerializer(many=True, required=False, default=list)
+    carrito_token = serializers.CharField(required=False, allow_blank=True)
+    datos_factura = serializers.DictField(required=False, default=dict)
 
 
 class CarritoItemSerializer(serializers.ModelSerializer):

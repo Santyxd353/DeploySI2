@@ -41,6 +41,43 @@ def _get_or_create_cliente(usuario):
     return cliente
 
 
+def _crear_cliente_invitado_desde_factura(datos_factura):
+    datos_factura = datos_factura if isinstance(datos_factura, dict) else {}
+    nombre = (datos_factura.get("nombre_cliente") or datos_factura.get("nombres") or "Cliente").strip()
+    partes = nombre.split()
+    nombres = nombre
+    apellidos = ""
+    if len(partes) > 1:
+        nombres = " ".join(partes[:-1])
+        apellidos = partes[-1]
+
+    return Cliente.objects.create(
+        tipo="invitado",
+        nombres=nombres or "Cliente",
+        apellidos=apellidos or "Mostrador",
+        email=(datos_factura.get("email_cliente") or datos_factura.get("email") or "").strip(),
+        telefono=(datos_factura.get("telefono") or "").strip(),
+        ci_nit=(datos_factura.get("nit_ci") or datos_factura.get("ci_nit") or "").strip(),
+        estado=True,
+    )
+
+
+def _build_confirmar_response(carrito, venta):
+    factura = getattr(venta, "factura", None)
+    payload = {
+        "carrito_id": carrito.id,
+        "venta": VentaSerializer(venta).data,
+    }
+    if factura:
+        payload["factura"] = {
+            "numero": factura.numero_factura,
+            "nombre_cliente": factura.nombre_cliente,
+            "email_cliente": factura.email_cliente,
+            "fecha_emision": factura.fecha_emision,
+        }
+    return payload
+
+
 def _extraer_token_invitado(request):
     return request.headers.get("X-Carrito-Token") or request.data.get("carrito_token") or request.query_params.get("carrito_token") or ""
 
@@ -150,10 +187,15 @@ def carrito_confirmar(request):
     data = serializer.validated_data
     
     usuario = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
-    if not usuario:
-        return Response({"detail": "Debes iniciar sesion para confirmar el carrito."}, status=status.HTTP_403_FORBIDDEN)
-    
-    carrito = Carrito.objects.filter(usuario=usuario, estado="activo").order_by("-updated_at").first()
+
+    if usuario:
+        carrito = Carrito.objects.filter(usuario=usuario, estado="activo").order_by("-updated_at").first()
+    else:
+        token = data.get("carrito_token") or _extraer_token_invitado(request)
+        if not token:
+            return Response({"detail": "carrito_token es requerido para confirmar el carrito."}, status=status.HTTP_403_FORBIDDEN)
+        carrito = Carrito.objects.filter(invitado_token=token, estado="activo").order_by("-updated_at").first()
+
     if not carrito:
         return Response({"detail": "No existe carrito activo."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -172,9 +214,11 @@ def carrito_confirmar(request):
         for item in items
     ]
 
+    datos_factura = data.get("datos_factura") if isinstance(data.get("datos_factura"), dict) else {}
+
     try:
         venta = crear_venta_service(
-                        cliente=_get_or_create_cliente(usuario),
+            cliente=_get_or_create_cliente(usuario) if usuario else _crear_cliente_invitado_desde_factura(datos_factura),
             items=venta_items,
             origen="online",
             vendedor=None,
@@ -182,6 +226,7 @@ def carrito_confirmar(request):
             descuento=data.get("descuento", 0),
             impuesto=data.get("impuesto", 0),
             observacion=data.get("observacion", ""),
+            datos_factura=datos_factura,
         )
     except VentaServiceError as exc:
         log_system_event(
@@ -198,7 +243,7 @@ def carrito_confirmar(request):
     carrito.estado = "confirmado"
     carrito.save(update_fields=["estado", "updated_at"])
 
-    return Response({"carrito_id": carrito.id, "venta": VentaSerializer(venta).data}, status=status.HTTP_201_CREATED)
+    return Response(_build_confirmar_response(carrito, venta), status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])

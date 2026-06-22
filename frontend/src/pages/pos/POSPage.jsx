@@ -6,6 +6,9 @@ import ProductSearch from "../../components/pos/ProductSearch";
 import Cart from "../../components/pos/Cart";
 import SaleConfirmation from "../../components/pos/SaleConfirmation";
 import { LogOutIcon, CloseIcon } from "../../components/ui/Icons";
+import BarcodeScannerInput from "../../components/ui/BarcodeScannerInput";
+import SimulatedQrModal from "../../components/payments/SimulatedQrModal";
+import SaleNote from "../../components/payments/SaleNote";
 
 const PAGE_SIZE = 20;
 
@@ -22,6 +25,8 @@ export default function POSPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [saleResult, setSaleResult] = useState(null);
+  const [pendingSalePayload, setPendingSalePayload] = useState(null);
+  const [showQrPayment, setShowQrPayment] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [categorias, setCategorias] = useState([]);
@@ -101,6 +106,28 @@ export default function POSPage() {
     });
   }, []);
 
+  const handleBarcodeScan = useCallback(async (codigo) => {
+    const normalized = codigo.trim();
+    const res = await buscarProductos({ search: normalized, estado: true, page_size: 20 });
+    const results = Array.isArray(res?.results) ? res.results : Array.isArray(res) ? res : [];
+    const producto = results.find((item) => String(item.sku || "").trim().toLowerCase() === normalized.toLowerCase());
+    if (!producto) {
+      throw new Error(`No encontrado: ${normalized}`);
+    }
+
+    const stockDisponible = Number(producto.inventario?.stock_disponible ?? 0);
+    const enCarrito = cart.find((item) => item.producto_id === producto.id);
+    if (stockDisponible <= 0 || (enCarrito && enCarrito.cantidad >= stockDisponible)) {
+      throw new Error("Producto sin stock disponible.");
+    }
+
+    addToCart(producto);
+    setQuery("");
+    setDebouncedQuery("");
+    setPage(1);
+    setError(null);
+  }, [addToCart, cart]);
+
   const updateQuantity = useCallback((productoId, cantidad) => {
     if (cantidad <= 0) return;
     setCart((prev) =>
@@ -126,34 +153,76 @@ export default function POSPage() {
     return { subtotal, total: subtotal };
   }, [cart]);
 
+  const buildSalePayload = useCallback((clienteData) => {
+    const { selectedRecetaId, cliente_id, cliente_data, paymentMethod, cashReceived, cashChange } = clienteData;
+    const paymentObservation =
+      paymentMethod === "efectivo"
+        ? `Pago efectivo POS | Recibido Bs ${Number(cashReceived || 0).toFixed(2)} | Cambio Bs ${Number(cashChange || 0).toFixed(2)}`
+        : "Pago QR simulado POS";
+    return {
+      items: cart.map((item) => ({
+        producto_id: item.producto_id,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+        ...(item.requiere_receta && selectedRecetaId
+          ? { receta_id: selectedRecetaId }
+          : {}),
+      })),
+      estado: "pagada",
+      observacion: paymentObservation,
+      ...(cliente_id ? { cliente_id } : { cliente_data }),
+    };
+  }, [cart]);
+
+  const finishSale = useCallback(async (payload) => {
+    const result = await crearVentaPOS(payload);
+    setSaleResult(result);
+    setCart([]);
+  }, []);
+
   const handleConfirmSale = useCallback(async (clienteData) => {
+    const payload = buildSalePayload(clienteData);
+    if (clienteData.paymentMethod === "efectivo") {
+      setProcessing(true);
+      setError(null);
+      try {
+        await finishSale(payload);
+        setShowConfirm(false);
+      } catch (err) {
+        const msg = err?.detail || err?.message || "Error al procesar la venta.";
+        setError(msg);
+      } finally {
+        setProcessing(false);
+      }
+      return;
+    }
+
+    setPendingSalePayload(payload);
+    setShowConfirm(false);
+    setShowQrPayment(true);
+  }, [buildSalePayload, finishSale]);
+
+  const handleRealizarPagoQr = useCallback(async () => {
+    if (!pendingSalePayload) return;
     setProcessing(true);
     setError(null);
     try {
-      const { selectedRecetaId, cliente_id, cliente_data } = clienteData;
-      const payload = {
-        items: cart.map((item) => ({
-          producto_id: item.producto_id,
-          cantidad: item.cantidad,
-          precio_unitario: item.precio_unitario,
-          ...(item.requiere_receta && selectedRecetaId
-            ? { receta_id: selectedRecetaId }
-            : {}),
-        })),
-        estado: "pagada",
-        ...(cliente_id ? { cliente_id } : { cliente_data }),
-      };
-      const result = await crearVentaPOS(payload);
-      setSaleResult(result);
-      setCart([]);
-      setShowConfirm(false);
+      await finishSale(pendingSalePayload);
+      setPendingSalePayload(null);
+      setShowQrPayment(false);
     } catch (err) {
       const msg = err?.detail || err?.message || "Error al procesar la venta.";
       setError(msg);
     } finally {
       setProcessing(false);
     }
-  }, [cart]);
+  }, [finishSale, pendingSalePayload]);
+
+  const handleCancelarPagoQr = useCallback(() => {
+    setShowQrPayment(false);
+    setPendingSalePayload(null);
+    setShowConfirm(true);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -206,8 +275,22 @@ export default function POSPage() {
         </div>
       )}
 
+      {saleResult && (
+        <div className="mx-4 mt-3 max-h-[52vh] overflow-y-auto">
+          <SaleNote payload={saleResult} onNewSale={() => setSaleResult(null)} />
+        </div>
+      )}
+
       <div className="flex flex-1 gap-0 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="border-b border-slate-200 bg-slate-50 p-4 pb-0">
+            <BarcodeScannerInput
+              label="Lector POS"
+              placeholder="Escanea SKU para agregar al carrito"
+              onScan={handleBarcodeScan}
+              autoFocus
+            />
+          </div>
           <ProductSearch
             query={query}
             onQueryChange={setQuery}
@@ -269,6 +352,21 @@ export default function POSPage() {
           onCancel={() => setShowConfirm(false)}
         />
       )}
+
+      <SimulatedQrModal
+        open={showQrPayment}
+        title="Cobro POS con QR simulado"
+        amount={cartTotals.total}
+        operationCode={`POS-${Date.now().toString().slice(-8)}`}
+        payload={JSON.stringify({
+          tipo: "POS_QR_SIMULADO",
+          total: cartTotals.total,
+          items: pendingSalePayload?.items || [],
+        })}
+        processing={processing}
+        onCancel={handleCancelarPagoQr}
+        onConfirm={handleRealizarPagoQr}
+      />
     </div>
   );
 }

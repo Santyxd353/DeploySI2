@@ -134,13 +134,17 @@ class CartService {
     String? accessToken,
     String observacion = '',
     String estado = 'pendiente',
+    Map<String, dynamic>? datosFactura,
   }) async {
+    final guestToken = await getGuestCartToken();
     final response = await _apiClient.post(
       '/api/carrito/confirmar/',
       headers: await _buildHeaders(accessToken: accessToken),
       body: {
         'estado': estado,
         'observacion': observacion,
+        if (datosFactura != null) 'datos_factura': datosFactura,
+        if (guestToken != null && guestToken.isNotEmpty) 'carrito_token': guestToken,
       },
     );
 
