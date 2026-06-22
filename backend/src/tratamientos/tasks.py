@@ -268,7 +268,7 @@ def notificar_tomas_proximas():
                     tratamiento_activo__recordatorios_activos=True,
                 )
 
-                # Freeze treatments with overdue dose until the patient marks intake.
+                # Congela los tratamientos con dosis vencida hasta que el paciente registre la toma.
                 tratamiento_ids = tomas_pendientes.values_list("tratamiento_activo_id", flat=True).distinct()
                 if tratamiento_ids:
                     TratamientoActivo.objects.filter(id__in=tratamiento_ids, estado="activo").update(
@@ -299,7 +299,7 @@ def notificar_tomas_proximas():
                         if ok:
                             enviados_tenant += 1
 
-                    # Second reminder once after 15 minutes if still not taken.
+                    # Segundo recordatorio una sola vez después de 15 minutos si aún no la ha tomado.
                     if (
                         toma.recordatorio_retraso_enviado_at is None
                         and toma.fecha_hora_programada <= grace_window_start
@@ -363,7 +363,7 @@ def cierre_diario_tratamientos():
                 omitidas_tenant = pendientes_anteriores.count()
                 pendientes_anteriores.update(estado="omitida", updated_at=timezone.now())
 
-                # Completion is dose-driven, so daily close no longer auto-completes by date.
+                # La finalización depende de las dosis; el cierre diario ya no completa automáticamente por fecha.
                 cerrados_tenant = 0
 
                 total_omitidas += omitidas_tenant

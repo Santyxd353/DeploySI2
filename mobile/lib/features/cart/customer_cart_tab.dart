@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/config/app_config.dart';
 import '../../core/auth/auth_session_manager.dart';
 import 'data/cart_service.dart';
+import 'ubicacion_selection_page.dart';
 import '../payments/data/payment_service.dart';
 
 class CartTab extends StatefulWidget {
@@ -111,10 +112,17 @@ class _CartTabState extends State<CartTab> {
       return;
     }
 
+    // Paso 1: datos de facturación
     final datosFactura = await _solicitarDatosFactura();
-    if (datosFactura == null) {
-      return;
-    }
+    if (datosFactura == null) return;
+
+    // Paso 2: selección de punto de entrega en el mapa
+    if (!mounted) return;
+    final ubicacion = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => const UbicacionSelectionPage()),
+    );
+    if (ubicacion == null) return; // usuario canceló
 
     setState(() => _processing = true);
 
@@ -147,6 +155,9 @@ class _CartTabState extends State<CartTab> {
         carritoToken: carritoToken,
         accessToken: accessToken,
         datosFactura: datosFactura,
+        latEntrega: ubicacion['lat'] as double?,
+        lonEntrega: ubicacion['lon'] as double?,
+        direccionTexto: ubicacion['direccion'] as String?,
       );
 
       await _cartService.clearGuestCartToken();
@@ -328,7 +339,7 @@ class _CartTabState extends State<CartTab> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, -5))],
       ),
       child: SafeArea(
         child: Column(

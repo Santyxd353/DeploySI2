@@ -6,7 +6,11 @@ import '../../../payments/my_payments_page.dart';
 import '../../../points/presentation/pages/customer_points_page.dart';
 import '../../../points/data/customer_points_service.dart';
 import '../../../points/data/models/customer_points_models.dart';
+import '../../../opinions/presentation/widgets/opinion_cliente_sheet.dart';
 import '../../../treatments/presentation/pages/treatments_catalog_page.dart';
+import '../../../orders/presentation/pages/my_orders_page.dart';
+import '../../../orders/presentation/pages/notificaciones_page.dart';
+import '../../../orders/data/orders_service.dart';
 import '../../../../core/auth/auth_session_manager.dart';
 import '../../../auth/data/models/auth_user.dart';
 import '../../../auth/presentation/pages/login_page.dart';
@@ -21,6 +25,8 @@ class CustomerHomePage extends StatefulWidget {
 class _CustomerHomePageState extends State<CustomerHomePage> {
   int _selectedIndex = 0;
   bool _isSyncing = true;
+  int _noLeidas = 0;
+  final _ordersService = OrdersService();
 
   @override
   void initState() {
@@ -40,13 +46,27 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         );
         return;
       }
-
-      print("✅ Usuario autenticado: ${session.user.email}");
-    } catch (e) {
-      print("🚨 Error de conexión: $e");
-    } finally {
+      _cargarContadorNoLeidas();
+    } catch (_) {} finally {
       if (mounted) setState(() => _isSyncing = false);
     }
+  }
+
+  Future<void> _cargarContadorNoLeidas() async {
+    try {
+      final token = await AuthSessionManager.getAccessToken();
+      if (token == null) return;
+      final count = await _ordersService.contadorNoLeidas(accessToken: token);
+      if (mounted) setState(() => _noLeidas = count);
+    } catch (_) {}
+  }
+
+  Future<void> _abrirNotificaciones() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NotificacionesPage()),
+    );
+    // Al volver, resetear badge
+    if (mounted) setState(() => _noLeidas = 0);
   }
 
   @override
@@ -72,11 +92,18 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
             MaterialPageRoute(builder: (_) => const MyPaymentsPage()),
           );
         },
+        onOpenOrders: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MyOrdersPage()),
+          );
+        },
       ),
       const CustomerCatalogTab(),
       const CartTab(),
       const _ProfileTab(),
     ];
+
+    final safeIndex = _selectedIndex.clamp(0, pages.length - 1);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAF9),
@@ -95,18 +122,47 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFE0E3E1)),
-            ),
-            child: IconButton(
-              icon: const Icon(
-                Icons.notifications_active_outlined,
-                color: Color(0xFF191C1C),
-                size: 22,
-              ),
-              onPressed: () {},
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFE0E3E1)),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.notifications_outlined,
+                      color: Color(0xFF191C1C),
+                      size: 22,
+                    ),
+                    onPressed: _abrirNotificaciones,
+                  ),
+                ),
+                if (_noLeidas > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFBA1A1A),
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Text(
+                        _noLeidas > 99 ? '99+' : '$_noLeidas',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -116,10 +172,10 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         transitionBuilder: (Widget child, Animation<double> animation) {
           return FadeTransition(opacity: animation, child: child);
         },
-        child: pages[_selectedIndex],
+        child: pages[safeIndex],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: safeIndex,
         onDestinationSelected: (index) =>
             setState(() => _selectedIndex = index),
         backgroundColor: Colors.white,
@@ -129,44 +185,23 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: [
           NavigationDestination(
-            icon: const Icon(
-              Icons.space_dashboard_outlined,
-              color: Color(0xFF3E4946),
-            ),
-            selectedIcon: const Icon(
-              Icons.space_dashboard_rounded,
-              color: Color(0xFF006A5E),
-            ),
+            icon: const Icon(Icons.space_dashboard_outlined, color: Color(0xFF3E4946)),
+            selectedIcon: const Icon(Icons.space_dashboard_rounded, color: Color(0xFF006A5E)),
             label: 'Inicio',
           ),
           NavigationDestination(
-            icon: const Icon(
-              Icons.medical_services_outlined,
-              color: Color(0xFF3E4946),
-            ),
-            selectedIcon: const Icon(
-              Icons.medical_services_rounded,
-              color: Color(0xFF006A5E),
-            ),
+            icon: const Icon(Icons.medical_services_outlined, color: Color(0xFF3E4946)),
+            selectedIcon: const Icon(Icons.medical_services_rounded, color: Color(0xFF006A5E)),
             label: 'Catalogo',
           ),
           NavigationDestination(
-            icon: const Icon(
-              Icons.shopping_bag_outlined,
-              color: Color(0xFF3E4946),
-            ),
-            selectedIcon: const Icon(
-              Icons.shopping_bag_rounded,
-              color: Color(0xFF006A5E),
-            ),
+            icon: const Icon(Icons.shopping_bag_outlined, color: Color(0xFF3E4946)),
+            selectedIcon: const Icon(Icons.shopping_bag_rounded, color: Color(0xFF006A5E)),
             label: 'Carrito',
           ),
           NavigationDestination(
             icon: const Icon(Icons.person_outline, color: Color(0xFF3E4946)),
-            selectedIcon: const Icon(
-              Icons.person_rounded,
-              color: Color(0xFF006A5E),
-            ),
+            selectedIcon: const Icon(Icons.person_rounded, color: Color(0xFF006A5E)),
             label: 'Perfil',
           ),
         ],
@@ -186,6 +221,17 @@ class _ProfileTabState extends State<_ProfileTab> {
   AuthUser? _user;
   bool _loading = true;
   bool _loggingOut = false;
+
+  Future<void> _openOpiniones() async {
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const OpinionClienteSheet(),
+    );
+  }
 
   @override
   void initState() {
@@ -301,6 +347,32 @@ class _ProfileTabState extends State<_ProfileTab> {
               SizedBox(
                 width: double.infinity,
                 height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _openOpiniones,
+                  icon: const Icon(
+                    Icons.rate_review_rounded,
+                    size: 20,
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006A5E),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  label: Text(
+                    'Dejar una opinion',
+                    style: GoogleFonts.manrope(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
                 child: OutlinedButton.icon(
                   onPressed: _loggingOut ? null : _logout,
                   icon: const Icon(
@@ -335,10 +407,12 @@ class _HomeOverviewTab extends StatefulWidget {
   const _HomeOverviewTab({
     required this.onOpenPayments,
     required this.onOpenPoints,
+    required this.onOpenOrders,
   });
 
   final VoidCallback onOpenPayments;
   final VoidCallback onOpenPoints;
+  final VoidCallback onOpenOrders;
 
   @override
   State<_HomeOverviewTab> createState() => _HomeOverviewTabState();
@@ -543,6 +617,16 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
                     ),
                   );
                 },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _QuickActionCard(
+                icon: Icons.local_shipping_rounded,
+                label: 'Mis Pedidos',
+                toneColor: const Color(0xFF00695C),
+                backgroundTint: const Color(0xFFE0F2F1),
+                onTap: widget.onOpenOrders,
               ),
             ),
           ],

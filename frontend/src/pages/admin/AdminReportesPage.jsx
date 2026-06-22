@@ -1064,6 +1064,7 @@ export default function AdminReportesPage() {
   const [error, setError] = useState("");
   const [aiText, setAiText] = useState("");
   const [aiInfo, setAiInfo] = useState("");
+  const [audioTranscript, setAudioTranscript] = useState("");
   const [recording, setRecording] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [tableSearch, setTableSearch] = useState("");
@@ -1161,6 +1162,7 @@ export default function AdminReportesPage() {
       setActiveCategory(catalogReport?.categoria || activeCategory);
       setTableSearch("");
       setAiInfo("");
+      setAudioTranscript("");
     } catch (err) {
       setError(err?.detail || "No se pudo generar el reporte.");
     } finally {
@@ -1185,6 +1187,7 @@ export default function AdminReportesPage() {
       setActiveCategory(catalogReport?.categoria || activeCategory);
       setFilters({ ...EMPTY_FILTERS, ...(report.filtros_aplicados || {}) });
       setTableSearch("");
+      setAudioTranscript("");
       setAiInfo(`Solicitud interpretada: ${data.interpretacion?.mensaje || data.texto}`);
     } catch (err) {
       setError(err?.detail || "No se pudo interpretar la solicitud con IA.");
@@ -1205,10 +1208,18 @@ export default function AdminReportesPage() {
       setSelectedType(report.tipo_reporte);
       setActiveCategory(catalogReport?.categoria || activeCategory);
       setFilters({ ...EMPTY_FILTERS, ...(report.filtros_aplicados || {}) });
-      setAiText(data.transcripcion || data.texto || "");
+      const transcript = data.transcripcion || data.texto || "";
+      setAiText(transcript);
+      setAudioTranscript(transcript);
       setTableSearch("");
-      setAiInfo(`Audio transcrito: ${data.transcripcion || data.texto}`);
+      setAiInfo(`Solicitud interpretada: ${data.interpretacion?.mensaje || report.titulo}`);
     } catch (err) {
+      const transcript = err?.transcripcion || err?.texto || "";
+      if (transcript) {
+        setAiText(transcript);
+        setAudioTranscript(transcript);
+        setAiInfo(`Transcripcion detectada, pero no se pudo interpretar: ${err?.detail || "Solicitud ambigua."}`);
+      }
       setError(err?.detail || "No se pudo generar el reporte desde el audio.");
     } finally {
       setAudioLoading(false);
@@ -1522,6 +1533,14 @@ export default function AdminReportesPage() {
         {aiInfo ? (
           <Alert tone="info">
             <AlertDescription>{aiInfo}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {audioTranscript ? (
+          <Alert tone="info">
+            <AlertDescription>
+              <strong>Transcripcion completa:</strong> {audioTranscript}
+            </AlertDescription>
           </Alert>
         ) : null}
 

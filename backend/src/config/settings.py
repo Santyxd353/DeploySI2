@@ -35,6 +35,7 @@ elif SAAS_ROOT_DOMAIN and f".{SAAS_ROOT_DOMAIN}" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(f".{SAAS_ROOT_DOMAIN}")
 
 SHARED_APPS = [
+    "daphne",
     "django_tenants",
     "tenants",
     "django.contrib.admin",
@@ -45,7 +46,8 @@ SHARED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
-    "django_celery_beat",          
+    "django_celery_beat",
+    "channels",
 ]
 
 TENANT_APPS = [
@@ -61,6 +63,7 @@ TENANT_APPS = [
     "opiniones",
     "publicidad",
     "puntos.apps.PuntosConfig",
+    "pedidos.apps.PedidosConfig",
 ]
 
 INSTALLED_APPS = SHARED_APPS + [app for app in TENANT_APPS if app not in SHARED_APPS]
@@ -234,7 +237,7 @@ if SAAS_ROOT_DOMAIN:
 # Configuración de cookies JWT
 AUTH_ACCESS_COOKIE_NAME = os.getenv("AUTH_ACCESS_COOKIE_NAME", "access_token")
 AUTH_REFRESH_COOKIE_NAME = os.getenv("AUTH_REFRESH_COOKIE_NAME", "refresh_token")
-AUTH_ACCESS_COOKIE_AGE = int(os.getenv("AUTH_ACCESS_COOKIE_AGE", "900"))
+AUTH_ACCESS_COOKIE_AGE = int(os.getenv("AUTH_ACCESS_COOKIE_AGE", "3600"))
 AUTH_REFRESH_COOKIE_AGE = int(os.getenv("AUTH_REFRESH_COOKIE_AGE", "604800"))
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "False").lower() == "true"
 AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
@@ -293,11 +296,11 @@ FIREBASE_SERVICE_ACCOUNT_FILE = os.getenv("FIREBASE_SERVICE_ACCOUNT_FILE", "")
 FCM_API_KEY = os.getenv("FCM_API_KEY", "")
 FCM_SENDER_ID = os.getenv("FCM_SENDER_ID", "")
 
-# Gemini reports assistant
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_REPORTS_MODEL = os.getenv("GEMINI_REPORTS_MODEL", "gemini-2.5-flash")
-GEMINI_AUDIO_MODEL = os.getenv("GEMINI_AUDIO_MODEL", GEMINI_REPORTS_MODEL)
-GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite")
+# Reportes: transcripcion local (Faster-Whisper)
+REPORTS_STT_MODEL = os.getenv("REPORTS_STT_MODEL", "small")
+REPORTS_STT_DEVICE = os.getenv("REPORTS_STT_DEVICE", "cpu")
+REPORTS_STT_COMPUTE_TYPE = os.getenv("REPORTS_STT_COMPUTE_TYPE", "int8")
+REPORTS_AUDIO_DEBUG = os.getenv("REPORTS_AUDIO_DEBUG", "False").lower() == "true"
 
 
 LOGGING = {
@@ -323,5 +326,15 @@ CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://redis:6
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'America/La_Paz'  # o la que uses
+CELERY_TIMEZONE = 'America/La_Paz'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Django Channels
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")],
+        },
+    },
+}

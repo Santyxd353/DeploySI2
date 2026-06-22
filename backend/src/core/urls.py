@@ -17,6 +17,7 @@ from .views import (
     register,
     verify_email,
 )
+from .kpis_views import global_kpis, tenant_kpis, tenant_kpis_detalle
 
 urlpatterns = [
     path("health/", health, name="health"),
@@ -34,4 +35,7 @@ urlpatterns = [
     path("admin/roles/<str:role_name>/", admin_role_detail, name="admin-role-detail"),
     path("admin/permisos/", admin_permisos_catalogo, name="admin-permisos-catalogo"),
     path("admin/bitacora/", admin_bitacora_list, name="admin-bitacora-list"),
+    path("admin/kpis/", tenant_kpis, name="tenant-kpis"),
+    path("admin/kpis/detalle/", tenant_kpis_detalle, name="tenant-kpis-detalle"),
+    path("global/kpis/", global_kpis, name="global-kpis"),
 ]

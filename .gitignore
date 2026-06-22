@@ -32,3 +32,6 @@ Thumbs.db
 **/.dart_tool/
 **/build/
 *.hprof
+
+# Claude Code
+CLAUDE.md

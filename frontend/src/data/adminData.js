@@ -22,6 +22,7 @@ export const adminProducts = [
 
 export const adminSections = [
   { id: "overview", label: "Resumen", icon: "dashboard", path: "/admin/resumen", requiredPermission: null },
+  { id: "kpis", label: "KPIs", icon: "spark", path: "/admin/kpis", requiredPermission: "ventas.ver" },
   { id: "products", label: "Productos", icon: "products", path: "/admin/productos", requiredPermission: "productos.ver" },
   { id: "labs", label: "Laboratorios", icon: "products", path: "/admin/laboratorios", requiredPermission: "laboratorios.ver" },
   { id: "categories", label: "Categorias", icon: "products", path: "/admin/categorias", requiredPermission: "categorias.ver" },
@@ -37,4 +38,6 @@ export const adminSections = [
   { id: "roles-permisos", label: "Roles y permisos", icon: "settings", path: "/admin/roles-permisos", requiredPermission: "usuarios.gestionar" },
   { id: "backups", label: "Backups", icon: "save", path: "/admin/backups", requiredPermission: null },
   { id: "predicciones", label: "Predicciones", icon: "reports", path: "/admin/predicciones", requiredPermission: "predicciones.ver" },
+  { id: "pedidos", label: "Pedidos", icon: "truck", path: "/admin/pedidos", requiredPermission: "pedidos.ver" },
+  { id: "suscripcion", label: "Plan y suscripción", icon: "finance", path: "/admin/suscripcion", requiredPermission: null },
 ];

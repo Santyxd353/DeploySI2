@@ -102,8 +102,8 @@ def iniciar_tratamiento_para_cliente(*, cliente, tratamiento_base):
 
     now = timezone.now()
     fecha_inicio = timezone.localdate()
-    # Until the patient confirms the first real intake, the treatment remains paused.
-    # We store provisional end dates and recalculate from the real first intake timestamp.
+    # Hasta que el paciente confirme la primera toma real, el tratamiento permanece en pausa.
+    # Guardamos fechas de fin provisionales y las recalculamos desde la primera toma real.
     fecha_fin_esperada = fecha_inicio
     fecha_fin_programada = None
 
@@ -119,7 +119,7 @@ def iniciar_tratamiento_para_cliente(*, cliente, tratamiento_base):
         recordatorios_activos=True,
     )
 
-    # The first intake starts immediately pending user confirmation in the app.
+    # La primera toma queda creada de inmediato, pendiente de confirmación del usuario en la app.
     TomaMedicamento.objects.create(
         tratamiento_activo=tratamiento_activo,
         fecha_hora_programada=now.replace(second=0, microsecond=0),
@@ -133,7 +133,7 @@ def activar_tratamiento_si_corresponde(tratamiento_activo, *, activation_time):
     if tratamiento_activo.estado != "pausado":
         return False
 
-    # First real intake starts the treatment clock.
+    # La primera toma real inicia el conteo del tratamiento.
     if tratamiento_activo.activado_en is None:
         fecha_fin_esperada, fecha_fin_programada = _calcular_fechas_fin_desde_referencia(
             tratamiento_activo.tratamiento_base,
@@ -160,7 +160,7 @@ def activar_tratamiento_si_corresponde(tratamiento_activo, *, activation_time):
         )
         return True
 
-    # Resume from pause and shift expected end by paused duration.
+    # Reanuda desde la pausa y desplaza la fecha de fin esperada por la duración pausada.
     pausa_desde = tratamiento_activo.pausa_desde
     if pausa_desde is not None and activation_time > pausa_desde:
         delta = activation_time - pausa_desde
@@ -249,7 +249,7 @@ def reprogramar_siguiente_toma_desde_ahora(tratamiento_activo, *, base_time=None
 
 
 def cerrar_tratamientos_expirados(*, cliente=None):
-    # Completion is dose-driven; this function is kept for compatibility with callers.
+    # El cierre depende de las dosis; esta función se mantiene por compatibilidad con los llamadores.
     return 0
 
 

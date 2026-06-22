@@ -1,27 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { adminSections } from "../../data/adminData";
 import {
+  BellIcon,
   ChartBarIcon,
   ChevronDownIcon,
   ClipboardListIcon,
   CogIcon,
   DollarIcon,
   LogOutIcon,
+  MedicalCrossIcon,
   MegaphoneIcon,
   PackageIcon,
+  SaveIcon,
   ShieldIcon,
+  SparkIcon,
+  TruckIcon,
   UserIcon,
   UsersGroupIcon,
-  SaveIcon,                     // ← Para la sección de backups
-  SparkIcon,
 } from "../ui/Icons";
+import { pedidosService } from "../../services/pedidosService";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminLayout({ activeSection, setActiveSection, currentUser, onLogout, children }) {
+  const [noLeidas, setNoLeidas] = useState(0);
+  const [notifs, setNotifs] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const notifsRef = useRef(null);
+  const wsAdminRef = useRef(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showUsersSection, setShowUsersSection] = useState(false);
+  const [showProductsSection, setShowProductsSection] = useState(false);
+  const [showSecuritySection, setShowSecuritySection] = useState(false);
   const [showInventorySection, setShowInventorySection] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -35,6 +46,35 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   const navigate = useNavigate();
 
   useOutsideClick(userMenuRef, () => setShowUserMenu(false));
+  useOutsideClick(notifsRef, () => setShowNotifs(false));
+
+  const cargarNotifs = useCallback(async () => {
+    try {
+      const [cnt, lista] = await Promise.all([
+        pedidosService.contadorNoLeidas(),
+        pedidosService.notificaciones({ page_size: 8, no_leidas: "true" }),
+      ]);
+      setNoLeidas(cnt.no_leidas ?? 0);
+      setNotifs(lista.results ?? []);
+    } catch {
+      // silencioso
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarNotifs();
+    const token = localStorage.getItem("auth_access_token");
+    if (!token) return;
+    const ws = new WebSocket(pedidosService.wsAdminUrl(token));
+    wsAdminRef.current = ws;
+    ws.onmessage = () => cargarNotifs();
+    return () => ws.close();
+  }, [cargarNotifs]);
+
+  async function handleMarcarTodas() {
+    await pedidosService.marcarTodasLeidas();
+    cargarNotifs();
+  }
 
   const roleLabel = useMemo(() => {
     if (resolvedUser?.role === "admin") return "Administrador";
@@ -49,6 +89,8 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const userManagementSectionIds = ["users", "roles-permisos"];
+  const productManagementSectionIds = ["products", "labs", "categories"];
+  const securityManagementSectionIds = ["bitacora", "backups"];
   const inventorySectionId = "inventory";
 
   const activeSectionByPath = useMemo(() => {
@@ -73,13 +115,29 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     [visibleSections]
   );
 
+  const productManagementSections = useMemo(
+    () => visibleSections.filter((section) => productManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
+  const securityManagementSections = useMemo(
+    () => visibleSections.filter((section) => securityManagementSectionIds.includes(section.id)),
+    [visibleSections]
+  );
+
   const inventorySection = useMemo(
     () => visibleSections.find((section) => section.id === inventorySectionId) || null,
     [visibleSections]
   );
 
   const regularSections = useMemo(
-    () => visibleSections.filter((section) => !userManagementSectionIds.includes(section.id) && section.id !== inventorySectionId),
+    () => visibleSections.filter(
+      (section) =>
+        !userManagementSectionIds.includes(section.id)
+        && !productManagementSectionIds.includes(section.id)
+        && !securityManagementSectionIds.includes(section.id)
+        && section.id !== inventorySectionId
+    ),
     [visibleSections]
   );
 
@@ -94,6 +152,8 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   );
 
   const isUsersSectionActive = userManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isProductsSectionActive = productManagementSections.some((section) => section.id === resolvedActiveSection);
+  const isSecuritySectionActive = securityManagementSections.some((section) => section.id === resolvedActiveSection);
   const inventoryView = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return params.get("view") || "dashboard";
@@ -105,6 +165,18 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
       setShowUsersSection(true);
     }
   }, [isUsersSectionActive]);
+
+  useEffect(() => {
+    if (isProductsSectionActive) {
+      setShowProductsSection(true);
+    }
+  }, [isProductsSectionActive]);
+
+  useEffect(() => {
+    if (isSecuritySectionActive) {
+      setShowSecuritySection(true);
+    }
+  }, [isSecuritySectionActive]);
 
   useEffect(() => {
     if (isInventorySectionActive) {
@@ -158,8 +230,9 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     finance: DollarIcon,
     settings: CogIcon,
     spark: SparkIcon,
-    pos: DollarIcon,            // ← Sección de punto de venta
-    backup: SaveIcon,           // ← Sección de backups
+    pos: DollarIcon,
+    backup: SaveIcon,
+    truck: TruckIcon,
   };
 
   const toggleSidebar = () => {
@@ -264,6 +337,48 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
               </div>
             ) : null}
 
+            {productManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowProductsSection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isProductsSectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isProductsSectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <PackageIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Productos</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showProductsSection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showProductsSection ? (
+                  <div className="space-y-1 pl-3">
+                    {productManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {inventorySection ? (
               <div className="space-y-1.5">
                 <button
@@ -323,7 +438,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
             ) : null}
 
             {otherRegularSections.map((section) => {
-              const Icon = iconMap[section.icon] || ShieldIcon;
+              const Icon = section.id === "treatments" ? MedicalCrossIcon : iconMap[section.icon] || ShieldIcon;
               const isActive = resolvedActiveSection === section.id;
 
               return (
@@ -344,6 +459,48 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                 </button>
               );
             })}
+
+            {securityManagementSections.length ? (
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSecuritySection((prev) => !prev)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                    isSecuritySectionActive
+                      ? "border-teal-600 bg-teal-600 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${isSecuritySectionActive ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>
+                    <ShieldIcon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate">Seguridad</span>
+                  <ChevronDownIcon className={`h-4 w-4 transition ${showSecuritySection ? "rotate-180" : ""}`} />
+                </button>
+
+                {showSecuritySection ? (
+                  <div className="space-y-1 pl-3">
+                    {securityManagementSections.map((section) => {
+                      const isActive = resolvedActiveSection === section.id;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => handleSectionAction(section)}
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                            isActive
+                              ? "border-teal-600 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{section.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </nav>
         </aside>
 
@@ -366,6 +523,59 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                 <h2 className="text-xl font-black text-slate-900">Gestion operativa</h2>
                 </div>
               </div>
+              {/* Campanita de notificaciones */}
+              <div className="relative" ref={notifsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifs((p) => !p)}
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300"
+                  aria-label="Notificaciones"
+                >
+                  <BellIcon className="h-5 w-5 text-slate-600" />
+                  {noLeidas > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-black text-white">
+                      {noLeidas > 9 ? "9+" : noLeidas}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifs && (
+                  <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <p className="text-xs font-bold text-slate-800">Notificaciones</p>
+                      {noLeidas > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMarcarTodas}
+                          className="text-xs font-semibold text-teal-600 hover:underline"
+                        >
+                          Marcar todas leídas
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifs.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-xs text-slate-400">Sin notificaciones nuevas</p>
+                      ) : notifs.map((n) => (
+                        <div key={n.id} className="px-4 py-3 hover:bg-slate-50">
+                          <p className="text-xs font-semibold text-slate-800">{n.titulo}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{n.mensaje}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-slate-100 px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => { navigate("/admin/pedidos"); setShowNotifs(false); }}
+                        className="w-full rounded-xl py-1.5 text-xs font-semibold text-teal-600 hover:bg-teal-50 transition"
+                      >
+                        Ver todos los pedidos
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"

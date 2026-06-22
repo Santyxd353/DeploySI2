@@ -22,6 +22,7 @@ stripe==15.1.0
 # Reportes con IA
 requests==2.33.1
 google-auth==2.38.0
+faster-whisper==1.1.1
 
 # Task queue y scheduling (Celery)
 packaging==24.2
@@ -29,3 +30,8 @@ celery[redis]==5.4.0
 django-celery-beat==2.7.0
 croniter==2.0.7
 redis==5.2.1
+
+# WebSockets (Django Channels)
+channels==4.2.0
+channels-redis==4.2.0
+daphne==4.1.2

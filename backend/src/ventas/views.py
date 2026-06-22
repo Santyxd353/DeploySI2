@@ -354,15 +354,17 @@ def confirmar_pago_venta(request):
     Body: {
         "payment_intent_id": "pi_xxxxxxxx",
         "carrito_token": "token_del_carrito",
-        "datos_factura": {
-            "nombre_cliente": "Juan Perez",
-            "email_cliente": "juan@email.com"
-        }
+        "datos_factura": { "nombre_cliente": "Juan Perez", "email_cliente": "juan@email.com" },
+        "lat_entrega": -17.783327,   // opcional: GPS del cliente al pagar
+        "lon_entrega": -63.182140
     }
     """
     payment_intent_id = request.data.get('payment_intent_id')
     carrito_token = request.data.get('carrito_token', '')
     datos_factura = request.data.get('datos_factura', {})
+    lat_entrega = request.data.get('lat_entrega')
+    lon_entrega = request.data.get('lon_entrega')
+    direccion_texto = (request.data.get('direccion_texto') or '').strip()
 
     if not payment_intent_id:
         return Response(
@@ -442,8 +444,34 @@ def confirmar_pago_venta(request):
         entidad_id=str(venta.id),
     )
 
+    # Actualizar Pedido con coordenadas y dirección (la señal ya lo creó sin coordenadas)
+    if created and (lat_entrega is not None and lon_entrega is not None):
+        try:
+            from decimal import Decimal as _D
+            from pedidos.models import Pedido as _Pedido
+            update_kwargs = {
+                'lat_entrega': _D(str(lat_entrega)),
+                'lon_entrega': _D(str(lon_entrega)),
+            }
+            if direccion_texto:
+                update_kwargs['direccion_texto'] = direccion_texto
+            _Pedido.objects.filter(venta=venta).update(**update_kwargs)
+        except Exception:
+            pass
+
+    response_data = _build_checkout_response(venta)
+
+    # Incluir pedido_id en la respuesta para que el cliente pueda conectarse al WebSocket
+    try:
+        from pedidos.models import Pedido as _Pedido
+        pedido = _Pedido.objects.filter(venta=venta).first()
+        if pedido:
+            response_data['pedido_id'] = pedido.id
+    except Exception:
+        pass
+
     return Response(
-        _build_checkout_response(venta),
+        response_data,
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )
 

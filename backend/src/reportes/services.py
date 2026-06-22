@@ -1,14 +1,17 @@
-import base64
-import json
+import os
+import re
+import tempfile
+import unicodedata
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from difflib import SequenceMatcher
 
-import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Max, Sum
 from django.db.models.functions import ExtractHour, ExtractWeekDay, TruncDate, TruncMonth
 from django.utils import timezone
+from faster_whisper import WhisperModel
 
 from clientes.models import Cliente, RecetaMedica
 from core.models import BitacoraSistema
@@ -170,9 +173,10 @@ REPORT_BY_ID = {item["id"]: item for item in REPORT_TYPES}
 
 
 class ReporteError(Exception):
-    def __init__(self, message, code="reporte_error"):
+    def __init__(self, message, code="reporte_error", payload=None):
         super().__init__(message)
         self.code = code
+        self.payload = payload or {}
 
 
 def _to_decimal(value):
@@ -1425,9 +1429,12 @@ def _parse_sort_date(value):
 
 
 def _sort_rows(reporte, filtros):
-    ordenar_por = filtros.get("ordenar_por")
     filas = list(reporte.get("filas") or [])
-    if not ordenar_por or not filas:
+    if not filas:
+        return reporte
+
+    ordenar_por = (filtros or {}).get("ordenar_por")
+    if not ordenar_por:
         return reporte
 
     key_candidates = {
@@ -1508,127 +1515,339 @@ def generar_reporte(tipo_reporte, filtros=None):
     return _sort_rows(reporte, filtros)
 
 
-def _gemini_generate_content(parts, schema=None, model=None):
-    api_key = settings.GEMINI_API_KEY
-    if not api_key:
-        raise ReporteError("Gemini no esta configurado. Falta GEMINI_API_KEY.", code="ia_no_configurada")
+_WHISPER_MODEL = None
 
-    model_name = _normalize_gemini_model_name(model or settings.GEMINI_REPORTS_MODEL)
-    payload = {
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"temperature": 0.1},
+WORD_NORMALIZATION_MAP = {
+    "estot": "stock",
+    "estoc": "stock",
+    "stoc": "stock",
+    "stok": "stock",
+    "stoq": "stock",
+    "stoks": "stock",
+    "vendio": "vendido",
+    "vendios": "vendidos",
+    "bajoo": "bajo",
+    "venras": "ventas",
+    "bentas": "ventas",
+    "benta": "venta",
+}
+
+MONTHS_ES = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+KNOWN_CATEGORY_TERMS = [
+    "cuidado personal",
+    "medicamentos",
+    "suplementos",
+]
+
+REPORT_INTENT_PHRASES = {
+    "stock_bajo": ["stock bajo", "inventario bajo", "bajo stock", "productos con stock bajo", "poco stock"],
+    "sin_stock": ["sin stock", "agotado", "agotados", "productos agotados"],
+    "stock_actual": ["stock actual", "inventario actual", "existencias actuales"],
+    "exceso_stock": ["exceso de stock", "sobre stock", "mucho stock"],
+    "stock_reservado": ["stock reservado", "reservas de stock"],
+    "productos_mas_vendidos": ["productos mas vendidos", "producto mas vendido", "top productos", "top vendidos"],
+    "medicamentos_mas_vendidos": ["medicamentos mas vendidos", "medicamento mas vendido", "medicinas mas vendidas"],
+    "productos_menos_vendidos": ["productos menos vendidos", "menos vendidos"],
+    "medicamentos_menos_vendidos": ["medicamentos menos vendidos", "medicinas menos vendidas"],
+    "productos_sin_ventas": ["productos sin ventas", "productos no vendidos", "sin ventas"],
+    "productos_mayores_ingresos": ["productos con mayores ingresos", "mayores ingresos por producto"],
+    "rentabilidad_productos": ["rentabilidad de productos", "rentabilidad", "margen de productos"],
+    "rotacion_productos": ["rotacion de productos", "rotacion"],
+    "valor_inventario": ["valor de inventario", "valor inventario"],
+    "valor_inventario_categoria": ["valor de inventario por categoria", "inventario por categoria"],
+    "valor_inventario_laboratorio": ["valor de inventario por laboratorio", "inventario por laboratorio"],
+    "ventas_resumen": ["resumen de ventas", "resumen ventas", "resumen del dia"],
+    "ventas_detalle": ["detalle de ventas", "ventas detalle"],
+    "ventas_tendencia": ["ventas por periodo", "tendencia de ventas", "tendencia"],
+    "ventas_por_origen": ["ventas por origen", "por origen"],
+    "ventas_por_estado": ["ventas por estado", "estado de ventas"],
+    "ventas_por_vendedor": ["ventas por vendedor", "por vendedor"],
+    "ventas_por_cliente": ["ventas por cliente", "por cliente"],
+    "ventas_por_categoria": ["ventas por categoria", "ventas por categorias", "por categoria"],
+    "ventas_por_hora": ["ventas por hora", "por hora"],
+    "ventas_por_dia_semana": ["ventas por dia de semana", "dia de semana"],
+    "ventas_canceladas": ["ventas canceladas", "canceladas"],
+    "descuentos_aplicados": ["descuentos aplicados", "descuentos"],
+    "impuestos_cobrados": ["impuestos cobrados", "impuestos"],
+    "ticket_promedio": ["ticket promedio", "promedio por venta"],
+    "facturas_emitidas": ["facturas emitidas", "facturas"],
+    "entradas_stock": ["entradas de stock", "entradas de inventario", "ingresos de stock"],
+    "entradas_por_producto": ["entradas por producto", "entradas de productos", "ingresos por producto"],
+    "mejores_clientes": ["mejores clientes", "clientes con mas compras"],
+    "clientes_nuevos": ["clientes nuevos", "nuevos clientes"],
+    "clientes_sin_compras": ["clientes sin compras", "sin compras"],
+    "clientes_por_tipo": ["clientes por tipo", "tipo de cliente"],
+    "frecuencia_clientes": ["frecuencia de compra", "frecuencia clientes"],
+    "ventas_por_tipo_cliente": ["ventas por tipo de cliente", "tipo cliente"],
+    "recetas_por_estado": ["recetas por estado", "estado de recetas"],
+    "recetas_vencidas": ["recetas vencidas", "vencidas"],
+    "recetas_detalle": ["detalle de recetas", "recetas detalle"],
+    "recetas_por_cliente": ["recetas por cliente"],
+    "actividad_por_modulo": ["actividad por modulo", "bitacora por modulo"],
+    "actividad_por_usuario": ["actividad por usuario", "bitacora por usuario"],
+    "eventos_fallidos": ["eventos fallidos", "fallidos"],
+    "eventos_por_resultado": ["eventos por resultado"],
+    "acciones_por_usuario": ["acciones por usuario"],
+    "bitacora_detalle": ["detalle de bitacora", "bitacora detalle"],
+}
+
+
+def _normalize_text(text):
+    value = str(text or "").strip().lower()
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    value = re.sub(r"[^a-z0-9\s-]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    tokens = [WORD_NORMALIZATION_MAP.get(token, token) for token in value.split(" ") if token]
+    return " ".join(tokens)
+
+
+def _contains_any(text, keywords):
+    return any(keyword in text for keyword in keywords)
+
+
+def _extract_periodo(text):
+    if _contains_any(text, ["mes pasado", "mes anterior"]):
+        return "mes_pasado"
+    if "hoy" in text:
+        return "hoy"
+    if "ayer" in text:
+        return "ayer"
+    if _contains_any(text, ["esta semana", "semana actual"]):
+        return "esta_semana"
+    if "semana pasada" in text:
+        return "semana_pasada"
+    if _contains_any(text, ["este anio", "este ano", "anual"]):
+        return "este_anio"
+    if _contains_any(text, ["todo el historial", "todo", "historico", "historica"]):
+        return "todo"
+    return "este_mes"
+
+
+def _extract_month_year_range(text):
+    month_pattern = "|".join(MONTHS_ES.keys())
+    match = re.search(rf"(?:mes\s+de\s+|de\s+)?({month_pattern})(?:\s+de\s+|\s+)?(\d{{4}})?", text)
+    if not match:
+        return None, None
+
+    month_name = match.group(1)
+    year_text = match.group(2)
+    month = MONTHS_ES.get(month_name)
+    if not month:
+        return None, None
+
+    year = int(year_text) if year_text else timezone.localdate().year
+    if year < 1900 or year > 2100:
+        return None, None
+
+    start = date(year, month, 1)
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
+    return start.isoformat(), end.isoformat()
+
+
+def _extract_top(text):
+    patterns = [r"\btop\s*(\d{1,3})\b", r"\bprimer(?:os|as)?\s+(\d{1,3})\b"]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return _to_int(match.group(1), default=10, max_value=100)
+    return None
+
+
+def _extract_sku(text):
+    match = re.search(r"\bsku\s*[:#-]?\s*([a-z0-9-]{2,})\b", text)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
+def _resolve_choice_from_text(text, choices):
+    for value, label in choices:
+        normalized_value = _normalize_text(value)
+        normalized_label = _normalize_text(label)
+        if normalized_value and normalized_value in text:
+            return value
+        if normalized_label and normalized_label in text:
+            return value
+    return None
+
+
+def _phrase_similarity(text_tokens, phrase_tokens):
+    if not text_tokens or not phrase_tokens:
+        return 0.0
+
+    phrase = " ".join(phrase_tokens)
+    best = SequenceMatcher(None, " ".join(text_tokens), phrase).ratio()
+    target_len = len(phrase_tokens)
+    window_sizes = {max(1, target_len - 1), target_len, target_len + 1}
+
+    for window_size in window_sizes:
+        if window_size > len(text_tokens):
+            continue
+        for start in range(0, len(text_tokens) - window_size + 1):
+            candidate = " ".join(text_tokens[start : start + window_size])
+            score = SequenceMatcher(None, candidate, phrase).ratio()
+            if score > best:
+                best = score
+    return best
+
+
+def _detect_report_type(text):
+    # 1) Alias directos por dominio.
+    for report_id, phrases in REPORT_INTENT_PHRASES.items():
+        for phrase in sorted(phrases, key=len, reverse=True):
+            if phrase in text:
+                return report_id
+
+    # 2) Reglas contextuales para frases con errores frecuentes de STT.
+    has_stock_word = _contains_any(text, ["stock", "inventario", "existencias"])
+    if has_stock_word and _contains_any(text, ["bajo", "poco"]):
+        return "stock_bajo"
+    if has_stock_word and _contains_any(text, ["sin", "agotado", "agotados"]):
+        return "sin_stock"
+    if "entradas" in text and "producto" in text:
+        return "entradas_por_producto"
+    if "entradas" in text:
+        return "entradas_stock"
+    if "ventas" in text and "categoria" in text:
+        return "ventas_por_categoria"
+    if "ventas" in text and _contains_any(text, ["por mes", "mensual"]):
+        return "ventas_tendencia"
+    start_month, end_month = _extract_month_year_range(text)
+    if "ventas" in text and start_month and end_month:
+        return "ventas_resumen"
+
+    # 3) Fuzzy matching contra todo el catalogo de frases.
+    text_tokens = text.split()
+    if len(text_tokens) < 2:
+        return None
+
+    best_report = None
+    best_score = 0.0
+    for report_id, phrases in REPORT_INTENT_PHRASES.items():
+        report_score = 0.0
+        for phrase in phrases:
+            phrase_tokens = phrase.split()
+            score = _phrase_similarity(text_tokens, phrase_tokens)
+            if score > report_score:
+                report_score = score
+        if report_score > best_score:
+            best_score = report_score
+            best_report = report_id
+
+    if best_report and best_score >= 0.78:
+        return best_report
+
+    return None
+
+
+def _extract_text_search_term(text, anchors):
+    for anchor in anchors:
+        pattern = rf"{anchor}\s+([a-z0-9\s-]{{3,}})$"
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def _extract_categoria_text(text):
+    for term in KNOWN_CATEGORY_TERMS:
+        if term in text:
+            return term
+
+    match = re.search(r"categor(?:ia|ias)\s*(?:de|:)?\s*([a-z0-9\s-]{3,})", text)
+    if not match:
+        return None
+
+    value = match.group(1)
+    value = re.split(r"\b(este mes|mes pasado|hoy|ayer|del mes|de)\b", value, maxsplit=1)[0]
+    value = value.strip(" -")
+    return value or None
+
+
+def _find_id_by_text(model, field, text):
+    if not text:
+        return None
+    needle = _normalize_text(text)
+    if not needle:
+        return None
+
+    for row_id, label in model.objects.values_list("id", field):
+        normalized_label = _normalize_text(label)
+        if not normalized_label:
+            continue
+        if needle in normalized_label or normalized_label in needle:
+            return row_id
+    return None
+
+
+def _build_local_interpretation(text):
+    normalized = _normalize_text(text)
+    tipo_reporte = _detect_report_type(normalized)
+    month_start, month_end = _extract_month_year_range(normalized)
+
+    if not tipo_reporte:
+        if "entradas" in normalized and "producto" in normalized:
+            tipo_reporte = "entradas_por_producto"
+        elif "entradas" in normalized:
+            tipo_reporte = "entradas_stock"
+        elif "ventas" in normalized and month_start and month_end:
+            tipo_reporte = "ventas_resumen"
+
+    if not tipo_reporte:
+        return {
+            "tipo_reporte": "ventas_resumen",
+            "periodo": "este_mes",
+            "resultado": "ambiguo",
+            "mensaje": "No pude identificar con claridad el reporte solicitado.",
+        }
+
+    fecha_inicio = month_start
+    fecha_fin = month_end
+    periodo = "personalizado" if fecha_inicio and fecha_fin else _extract_periodo(normalized)
+    agrupacion = "mes" if _contains_any(normalized, ["por mes", "mensual"]) else None
+    if tipo_reporte == "ventas_tendencia" and (month_start or "mes" in normalized):
+        agrupacion = "mes"
+
+    parsed = {
+        "tipo_reporte": tipo_reporte,
+        "periodo": periodo,
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+        "top": _extract_top(normalized),
+        "agrupacion": agrupacion,
+        "origen": "online" if "online" in normalized else "fisica" if "fisica" in normalized else None,
+        "estado": _resolve_choice_from_text(normalized, Venta.ESTADO_CHOICES),
+        "stock_estado": "stock_bajo" if "stock bajo" in normalized else "sin_stock" if "sin stock" in normalized else "exceso_stock" if "exceso" in normalized else None,
+        "tipo_cliente": _resolve_choice_from_text(normalized, Cliente.TIPO_CHOICES),
+        "estado_receta": _resolve_choice_from_text(normalized, RecetaMedica.ESTADO_CHOICES),
+        "categoria_texto": _extract_categoria_text(normalized) or _extract_text_search_term(normalized, ["categoria", "categorias"]),
+        "laboratorio_texto": _extract_text_search_term(normalized, ["laboratorio", "laboratorios"]),
+        "producto_texto": _extract_text_search_term(normalized, ["producto", "productos", "medicamento", "medicamentos"]),
+        "sku": _extract_sku(normalized),
+        "ordenar_por": "cantidad_desc" if _contains_any(normalized, ["mas vendidos", "mayor a menor", "desc"]) else None,
+        "resultado": "ok",
+        "mensaje": f"Solicitud interpretada para {REPORT_BY_ID[tipo_reporte]['label']}.",
     }
-    if schema:
-        payload["generationConfig"]["responseMimeType"] = "application/json"
-        payload["generationConfig"]["responseJsonSchema"] = schema
-
-    last_response = None
-    attempted_models = []
-    for candidate_model in _gemini_candidate_models(model_name):
-        attempted_models.append(candidate_model)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate_model}:generateContent"
-        try:
-            response = requests.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=45)
-        except requests.Timeout as exc:
-            raise ReporteError("Gemini tardo demasiado en responder. Intenta nuevamente.", code="ia_timeout") from exc
-        except requests.RequestException as exc:
-            raise ReporteError("No se pudo conectar con Gemini. Revisa tu conexion o la configuracion de red.", code="ia_error") from exc
-
-        if response.status_code < 400:
-            data = response.json()
-            try:
-                response_parts = data["candidates"][0]["content"]["parts"]
-            except (KeyError, IndexError) as exc:
-                raise ReporteError("Gemini no devolvio una respuesta valida.", code="ia_error") from exc
-            return "".join(part.get("text", "") for part in response_parts)
-
-        last_response = response
-        if response.status_code not in (400, 404):
-            break
-
-    if last_response is not None:
-        raise ReporteError(_gemini_error_message(last_response, attempted_models[-1], attempted_models), code="ia_error")
-    raise ReporteError("Gemini no devolvio una respuesta valida.", code="ia_error")
-
-
-def _normalize_gemini_model_name(model_name):
-    value = str(model_name or "").strip()
-    if value.startswith("models/"):
-        value = value.split("/", 1)[1]
-    return value
-
-
-def _gemini_candidate_models(primary_model):
-    configured_fallbacks = getattr(settings, "GEMINI_FALLBACK_MODELS", "")
-    raw_candidates = [primary_model]
-    raw_candidates.extend(item.strip() for item in str(configured_fallbacks).split(",") if item.strip())
-    raw_candidates.extend(["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"])
-
-    seen = set()
-    candidates = []
-    for item in raw_candidates:
-        model_name = _normalize_gemini_model_name(item)
-        if model_name and model_name not in seen:
-            seen.add(model_name)
-            candidates.append(model_name)
-    return candidates
-
-
-def _gemini_error_message(response, model_name, attempted_models=None):
-    detail = ""
-    try:
-        detail = response.json().get("error", {}).get("message", "")
-    except ValueError:
-        detail = response.text[:180] if response.text else ""
-
-    if response.status_code in (400, 404):
-        attempted = ", ".join(attempted_models or [model_name])
-        return f"Modelo Gemini no disponible o solicitud invalida. Modelos probados: {attempted}. Revisa GEMINI_REPORTS_MODEL y GEMINI_AUDIO_MODEL."
-    if response.status_code in (401, 403):
-        return "Gemini rechazo la clave API. Revisa que GEMINI_API_KEY sea valida y tenga acceso a Generative Language API."
-    if response.status_code == 429:
-        return "Gemini alcanzo el limite de cuota o velocidad. Intenta mas tarde o revisa la cuota de la API."
-    if detail:
-        return f"Gemini rechazo la solicitud ({response.status_code}): {detail}"
-    return f"Gemini rechazo la solicitud ({response.status_code})."
-
-
-def _interpretation_schema():
-    return {
-        "type": "object",
-        "properties": {
-            "tipo_reporte": {"type": "string", "enum": list(REPORT_BY_ID.keys())},
-            "periodo": {"type": "string", "enum": [item["value"] for item in PERIODOS]},
-            "fecha_inicio": {"type": ["string", "null"], "description": "YYYY-MM-DD si aplica"},
-            "fecha_fin": {"type": ["string", "null"], "description": "YYYY-MM-DD si aplica"},
-            "top": {"type": ["integer", "null"], "minimum": 1, "maximum": 100},
-            "origen": {"type": ["string", "null"], "enum": ["fisica", "online", None]},
-            "estado": {"type": ["string", "null"], "enum": [value for value, _ in Venta.ESTADO_CHOICES] + [None]},
-            "stock_estado": {"type": ["string", "null"], "enum": ["disponible", "stock_bajo", "sin_stock", "exceso_stock", None]},
-            "tipo_cliente": {"type": ["string", "null"], "enum": [value for value, _ in Cliente.TIPO_CHOICES] + [None]},
-            "estado_receta": {"type": ["string", "null"], "enum": [value for value, _ in RecetaMedica.ESTADO_CHOICES] + [None]},
-            "categoria_texto": {"type": ["string", "null"]},
-            "laboratorio_texto": {"type": ["string", "null"]},
-            "producto_texto": {"type": ["string", "null"]},
-            "sku": {"type": ["string", "null"]},
-            "ordenar_por": {"type": ["string", "null"], "enum": [item["value"] for item in ORDENES_REPORTE] + [None]},
-            "resultado": {"type": "string", "enum": ["ok", "ambiguo", "no_soportado"]},
-            "mensaje": {"type": "string"},
-        },
-        "required": ["tipo_reporte", "periodo", "resultado", "mensaje"],
-    }
-
-
-def _audio_interpretation_schema():
-    schema = _interpretation_schema()
-    return {
-        **schema,
-        "properties": {
-            **schema["properties"],
-            "transcripcion": {"type": "string"},
-        },
-        "required": ["transcripcion", *schema["required"]],
-    }
+    return parsed
 
 
 def _resolve_text_filter(model, field, text):
@@ -1645,7 +1864,7 @@ def _interpretacion_a_filtros(data):
         raise ReporteError("La IA eligio un reporte no soportado.", code="tipo_no_soportado")
 
     filtros = {}
-    for key in ["periodo", "fecha_inicio", "fecha_fin", "top", "origen", "estado", "stock_estado", "tipo_cliente", "estado_receta", "sku", "ordenar_por"]:
+    for key in ["periodo", "fecha_inicio", "fecha_fin", "top", "agrupacion", "origen", "estado", "stock_estado", "tipo_cliente", "estado_receta", "sku", "ordenar_por"]:
         if data.get(key) not in (None, ""):
             filtros[key] = data[key]
 
@@ -1659,6 +1878,19 @@ def _interpretacion_a_filtros(data):
     if producto_id:
         filtros["producto"] = producto_id
 
+    if not filtros.get("categoria"):
+        categoria_match = _find_id_by_text(Categoria, "nombre", data.get("categoria_texto"))
+        if categoria_match:
+            filtros["categoria"] = categoria_match
+    if not filtros.get("laboratorio"):
+        laboratorio_match = _find_id_by_text(Laboratorio, "nombre", data.get("laboratorio_texto"))
+        if laboratorio_match:
+            filtros["laboratorio"] = laboratorio_match
+    if not filtros.get("producto"):
+        producto_match = _find_id_by_text(Producto, "nombre_comercial", data.get("producto_texto"))
+        if producto_match:
+            filtros["producto"] = producto_match
+
     return tipo_reporte, filtros
 
 
@@ -1666,80 +1898,118 @@ def interpretar_texto_y_generar(texto):
     if not texto or not texto.strip():
         raise ReporteError("Ingresa una solicitud para generar el reporte.", code="texto_requerido")
 
-    catalog_lines = "\n".join(f"- {item['id']}: {item['label']} ({item['categoria']})" for item in REPORT_TYPES)
-    prompt = f"""
-Interpreta la solicitud del usuario y elige exactamente un reporte del catalogo.
-Devuelve solo JSON valido segun el esquema.
-No inventes reportes, SQL ni filtros que no existan.
-Si el usuario pide "medicamentos mas vendidos", usa medicamentos_mas_vendidos.
-Si pide "menos vendidos", usa productos_menos_vendidos o medicamentos_menos_vendidos segun corresponda.
-Si pide "productos sin ventas" o "no vendidos", usa productos_sin_ventas.
-Si pide "rentabilidad" o "margen", usa rentabilidad_productos.
-Si pide "valor de inventario", usa valor_inventario.
-Si pide "rotacion", usa rotacion_productos.
-Si pide "ventas por hora", usa ventas_por_hora.
-Si pide "stock bajo", usa stock_bajo.
-Si pide "mes pasado", periodo=mes_pasado. Si no menciona fecha, usa periodo=este_mes.
-
-Catalogo:
-{catalog_lines}
-
-Solicitud: {texto.strip()}
-"""
-    raw = _gemini_generate_content([{"text": prompt}], schema=_interpretation_schema())
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ReporteError("Gemini devolvio una respuesta no procesable.", code="ia_error") from exc
+    parsed = _build_local_interpretation(texto.strip())
 
     tipo_reporte, filtros = _interpretacion_a_filtros(parsed)
     reporte = generar_reporte(tipo_reporte, filtros)
     return {"texto": texto.strip(), "interpretacion": parsed, "reporte": reporte}
 
 
-def transcribir_audio_y_generar(uploaded_file):
+def _audio_suffix(uploaded_file):
+    name = (getattr(uploaded_file, "name", "") or "").lower()
+    content_type = (getattr(uploaded_file, "content_type", "") or "").lower()
+    for candidate in [name, content_type]:
+        if "mp3" in candidate:
+            return ".mp3"
+        if "wav" in candidate:
+            return ".wav"
+        if "ogg" in candidate:
+            return ".ogg"
+        if "m4a" in candidate:
+            return ".m4a"
+        if "mp4" in candidate:
+            return ".mp4"
+        if "webm" in candidate:
+            return ".webm"
+    return ".webm"
+
+
+def _get_whisper_model():
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is not None:
+        return _WHISPER_MODEL
+
+    model_size = getattr(settings, "REPORTS_STT_MODEL", "small")
+    device = getattr(settings, "REPORTS_STT_DEVICE", "cpu")
+    compute_type = getattr(settings, "REPORTS_STT_COMPUTE_TYPE", "int8")
+
+    try:
+        _WHISPER_MODEL = WhisperModel(model_size, device=device, compute_type=compute_type)
+    except Exception as exc:
+        raise ReporteError("No se pudo inicializar la transcripcion de audio local.", code="audio_no_disponible") from exc
+    return _WHISPER_MODEL
+
+
+def _transcribir_audio_local(content, suffix):
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            temp_path = tmp_file.name
+            tmp_file.write(content)
+
+        model = _get_whisper_model()
+        # Primer intento con VAD para reducir ruido y acelerar.
+        segments, _ = model.transcribe(
+            temp_path,
+            language="es",
+            task="transcribe",
+            vad_filter=True,
+            beam_size=1,
+        )
+        parts = [segment.text.strip() for segment in segments if segment.text and segment.text.strip()]
+
+        # Fallback: algunos audios cortos o de bajo volumen quedan vacios con VAD.
+        if not parts:
+            segments, _ = model.transcribe(
+                temp_path,
+                language="es",
+                task="transcribe",
+                vad_filter=False,
+                beam_size=1,
+            )
+            parts = [segment.text.strip() for segment in segments if segment.text and segment.text.strip()]
+
+        return " ".join(parts).strip()
+    except ReporteError:
+        raise
+    except Exception as exc:
+        raise ReporteError("No se pudo procesar el audio enviado.", code="audio_invalido") from exc
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def transcribir_audio_local(uploaded_file):
     if not uploaded_file:
         raise ReporteError("Debes enviar un archivo de audio.", code="audio_requerido")
     if uploaded_file.size > MAX_AUDIO_BYTES:
         raise ReporteError("El audio no puede superar 25 MB.", code="audio_muy_grande")
 
     content = uploaded_file.read()
-    encoded = base64.b64encode(content).decode("ascii")
-    mime_type = getattr(uploaded_file, "content_type", "") or "audio/webm"
-    catalog_lines = "\n".join(f"- {item['id']}: {item['label']} ({item['categoria']})" for item in REPORT_TYPES)
-    prompt = f"""
-Transcribe el audio en espanol e interpreta la solicitud para elegir exactamente un reporte del catalogo.
-Devuelve solo JSON valido segun el esquema.
-No inventes reportes, SQL ni filtros que no existan.
-Si el usuario pide "medicamentos mas vendidos", usa medicamentos_mas_vendidos.
-Si pide "menos vendidos", usa productos_menos_vendidos o medicamentos_menos_vendidos segun corresponda.
-Si pide "productos sin ventas" o "no vendidos", usa productos_sin_ventas.
-Si pide "rentabilidad" o "margen", usa rentabilidad_productos.
-Si pide "valor de inventario", usa valor_inventario.
-Si pide "rotacion", usa rotacion_productos.
-Si pide "ventas por hora", usa ventas_por_hora.
-Si pide "stock bajo", usa stock_bajo.
-Si pide "mes pasado", periodo=mes_pasado. Si no menciona fecha, usa periodo=este_mes.
-
-Catalogo:
-{catalog_lines}
-"""
-    raw = _gemini_generate_content(
-        [
-            {"text": prompt},
-            {"inlineData": {"mimeType": mime_type, "data": encoded}},
-        ],
-        schema=_audio_interpretation_schema(),
-        model=settings.GEMINI_AUDIO_MODEL,
-    )
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ReporteError("No se pudo transcribir el audio.", code="ia_error") from exc
-    transcripcion = (parsed.get("transcripcion") or "").strip()
+    transcripcion = _transcribir_audio_local(content, _audio_suffix(uploaded_file))
     if not transcripcion:
         raise ReporteError("No se detecto voz en el audio.", code="audio_sin_texto")
+    return transcripcion
 
-    tipo_reporte, filtros = _interpretacion_a_filtros(parsed)
+
+def transcribir_audio_y_generar(uploaded_file):
+    transcripcion = transcribir_audio_local(uploaded_file)
+
+    parsed = _build_local_interpretation(transcripcion)
+    try:
+        tipo_reporte, filtros = _interpretacion_a_filtros(parsed)
+    except ReporteError as exc:
+        raise ReporteError(
+            str(exc),
+            code=getattr(exc, "code", "reporte_error"),
+            payload={
+                "transcripcion": transcripcion,
+                "interpretacion": parsed,
+            },
+        ) from exc
+
     reporte = generar_reporte(tipo_reporte, filtros)
     return {"texto": transcripcion, "transcripcion": transcripcion, "interpretacion": parsed, "reporte": reporte}

@@ -172,6 +172,135 @@ class _DailySchedulePageState extends State<DailySchedulePage> {
     }
   }
 
+  Future<int?> _showPostponeMinutesDialog() async {
+    return showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Posponer toma'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(10),
+            child: const Text('10 minutos'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(15),
+            child: const Text('15 minutos'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(30),
+            child: const Text('30 minutos'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(context).pop(60),
+            child: const Text('60 minutos'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _postponeDose(ActiveTreatment treatment, IntakeLog intake) async {
+    final minutes = await _showPostponeMinutesDialog();
+    if (minutes == null || !mounted) return;
+
+    try {
+      final token = await AuthSessionManager.getAccessToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Sesión no disponible.');
+      }
+
+      await _repository.postponeDose(
+        activeTreatmentId: treatment.id,
+        intakeId: intake.id,
+        minutes: minutes,
+        accessToken: token,
+      );
+
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Toma pospuesta $minutes minutos.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF006A5E),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFBA1A1A),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _confirmOmitDose() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Omitir toma'),
+            content: const Text(
+              'Esta dosis quedará registrada como omitida. ¿Deseas continuar?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFBA1A1A),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Omitir'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _omitDose(ActiveTreatment treatment, IntakeLog intake) async {
+    final confirmed = await _confirmOmitDose();
+    if (!confirmed || !mounted) return;
+
+    try {
+      final token = await AuthSessionManager.getAccessToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Sesión no disponible.');
+      }
+
+      await _repository.omitDose(
+        activeTreatmentId: treatment.id,
+        intakeId: intake.id,
+        accessToken: token,
+      );
+
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Toma marcada como omitida.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFF7A5800),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFBA1A1A),
+        ),
+      );
+    }
+  }
+
   Future<void> _showCompletionDialog(String treatmentName) async {
     return showDialog<void>(
       context: context,
@@ -303,6 +432,8 @@ class _DailySchedulePageState extends State<DailySchedulePage> {
                   now: _now,
                   formatCountdown: _formatCountdown,
                   onMark: () => _markTaken(entry.treatment, entry.intake),
+                  onPostpone: () => _postponeDose(entry.treatment, entry.intake),
+                  onOmit: () => _omitDose(entry.treatment, entry.intake),
                 );
               },
             ),
@@ -374,6 +505,8 @@ class _IntakeItem extends StatelessWidget {
     required this.now,
     required this.formatCountdown,
     required this.onMark,
+    required this.onPostpone,
+    required this.onOmit,
   });
 
   final ActiveTreatment treatment;
@@ -381,9 +514,11 @@ class _IntakeItem extends StatelessWidget {
   final DateTime now;
   final String Function(Duration) formatCountdown;
   final VoidCallback onMark;
+  final VoidCallback onPostpone;
+  final VoidCallback onOmit;
 
   bool get _isTaken => intake.status.toLowerCase() == 'tomada';
-    bool get _isFuture => intake.scheduledAt.isAfter(now);
+  bool get _isFuture => intake.scheduledAt.isAfter(now);
   bool get _isOverdue =>
       !_isTaken && !intake.scheduledAt.isAfter(now);
 
@@ -497,6 +632,36 @@ class _IntakeItem extends StatelessWidget {
                     child: Text(
                       'Puedes tomarla ahora',
                       style: TextStyle(fontSize: 11, color: Color(0xFF7A5800), fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                if (!_isTaken && !_isFuture)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: onPostpone,
+                          icon: const Icon(Icons.schedule_rounded, size: 16),
+                          label: const Text('Posponer'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: onOmit,
+                          icon: const Icon(Icons.block_rounded, size: 16),
+                          label: const Text('Omitir'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF7A5800),
+                            side: const BorderSide(color: Color(0xFF7A5800)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],

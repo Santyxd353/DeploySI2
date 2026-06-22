@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_client.dart';
 
@@ -151,6 +152,28 @@ class CartService {
     }
 
     await clearGuestCartToken();
+    return data;
+  }
+
+  Future<Map<String, dynamic>> buscarPorAudio({
+    required Uint8List audioBytes,
+    required String filename,
+    String? accessToken,
+  }) async {
+    final response = await _apiClient.postMultipartBytes(
+      '/api/carrito/buscar-audio/',
+      fieldName: 'audio',
+      bytes: audioBytes,
+      filename: filename,
+      headers: await _buildHeaders(accessToken: accessToken),
+    );
+
+    final data = _apiClient.parseJsonMap(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw CartServiceException(
+        _extractDetail(data, fallback: 'No se pudo procesar la busqueda por voz.'),
+      );
+    }
     return data;
   }
 

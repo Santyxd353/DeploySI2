@@ -138,15 +138,56 @@ def create_tenant_with_admin(*, nombre_farmacia, subdominio, email_admin, passwo
     return tenant, user
 
 
-def create_subscription_checkout_session(*, tenant, plan, billing_cycle="monthly", success_url=None, cancel_url=None):
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+def _obtener_o_crear_stripe_price(plan, billing_cycle):
+    """
+    Devuelve el stripe_price_id para el ciclo dado.
+    Si no está configurado, lo crea dinámicamente en Stripe (útil en modo prueba)
+    y lo persiste en el Plan para reutilizarlo.
+    """
     price_id = plan.stripe_price_id_mensual if billing_cycle == "monthly" else plan.stripe_price_id_anual
 
-    if not price_id:
-        raise ValueError("El plan no tiene precio Stripe configurado para ese ciclo.")
+    if price_id:
+        return price_id
 
-    success_url = success_url or getattr(settings, "SAAS_BILLING_SUCCESS_URL", "http://localhost:5173/admin/suscripcion?status=ok")
-    cancel_url = cancel_url or getattr(settings, "SAAS_BILLING_CANCEL_URL", "http://localhost:5173/admin/suscripcion?status=cancel")
+    amount = plan.precio_mensual if billing_cycle == "monthly" else plan.precio_anual
+    amount_cents = int(round(float(amount) * 100))
+    if amount_cents <= 0:
+        raise ValueError(f"El plan '{plan.nombre}' no tiene precio configurado para ciclo '{billing_cycle}'.")
+
+    interval = "month" if billing_cycle == "monthly" else "year"
+    currency = getattr(settings, "STRIPE_CURRENCY", "usd").lower()
+
+    price = stripe.Price.create(
+        unit_amount=amount_cents,
+        currency=currency,
+        recurring={"interval": interval},
+        product_data={"name": f"{plan.nombre} — {billing_cycle}"},
+    )
+
+    # Guardar para no recrear en el próximo checkout
+    if billing_cycle == "monthly":
+        plan.stripe_price_id_mensual = price.id
+        plan.save(update_fields=["stripe_price_id_mensual"])
+    else:
+        plan.stripe_price_id_anual = price.id
+        plan.save(update_fields=["stripe_price_id_anual"])
+
+    return price.id
+
+
+def create_subscription_checkout_session(*, tenant, plan, billing_cycle="monthly", success_url=None, cancel_url=None):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    price_id = _obtener_o_crear_stripe_price(plan, billing_cycle)
+
+    success_url = success_url or getattr(
+        settings, "SAAS_BILLING_SUCCESS_URL",
+        "http://localhost:5173/admin/suscripcion?status=ok"
+    )
+    cancel_url = cancel_url or getattr(
+        settings, "SAAS_BILLING_CANCEL_URL",
+        "http://localhost:5173/admin/suscripcion?status=cancel"
+    )
 
     session = stripe.checkout.Session.create(
         mode="subscription",
@@ -161,3 +202,14 @@ def create_subscription_checkout_session(*, tenant, plan, billing_cycle="monthly
     )
 
     return session
+
+
+def create_billing_portal_session(*, customer_id, return_url=None):
+    """Crea una sesión del portal de facturación de Stripe para gestionar tarjetas/facturas."""
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    return_url = return_url or "http://localhost:5173/admin/suscripcion"
+
+    return stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=return_url,
+    )

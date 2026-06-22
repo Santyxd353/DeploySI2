@@ -16,6 +16,8 @@ class AuthUser {
   final bool canAccessAdmin;
 
   bool get isClientRole => role.toLowerCase() == 'cliente';
+  bool get isRepartidorRole => role.toLowerCase() == 'repartidor';
+  bool get canAccessMobileApp => isClientRole || isRepartidorRole;
 
   String get fullName {
     final joined = '$firstName $lastName'.trim();

@@ -31,6 +31,7 @@ WORKDIR /app
 # Cliente PostgreSQL + runtime libs para Pillow (ImageField)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    ffmpeg \
     libjpeg62-turbo \
     zlib1g \
     libpng16-16 \

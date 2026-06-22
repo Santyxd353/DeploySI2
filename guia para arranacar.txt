@@ -228,4 +228,12 @@ docker compose exec backend python manage.py check
 ENTRENAR MODELO
 docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia1
 docker compose exec backend python manage.py tenant_command entrenar_modelo --schema=farmacia2
+
+sembrar 30 registros de entrada para ver todos los estados
+de inventario.
+Para todos las farmacias:
+´docker compose exec backend python manage.py seed_entradas_inventario_estados --all-tenants --total 30´
+
+Para farmacia1:
+`docker compose exec backend python manage.py seed_entradas_inventario_estados --schema farmacia1 --total 30`
 docker compose exec backend python manage.py seed_tratamiento_demo --schema farmacia1
