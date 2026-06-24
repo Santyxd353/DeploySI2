@@ -44,6 +44,7 @@ const SegmentacionClientesPage = lazy(() => import("./pages/admin/SegmentacionCl
 const AdminOpinionesPage = lazy(() => import("./pages/admin/AdminOpinionesPage"));
 const AdminPublicidadPage = lazy(() => import("./pages/admin/AdminPublicidadPage"));
 const AdminLimitesDispensacionPage = lazy(() => import("./pages/admin/AdminLimitesDispensacionPage"));
+const AdminVentasPage = lazy(() => import("./pages/admin/AdminVentasPage"));
 const AdminPedidosPage = lazy(() => import("./pages/admin/AdminPedidosPage"));
 const AdminKpisPage = lazy(() => import("./pages/admin/AdminKpisPage"));
 const GlobalOverviewPage = lazy(() => import("./pages/admin/GlobalOverviewPage"));
@@ -94,6 +95,7 @@ function App() {
               <Route path="/admin/backups" element={<AdminBackupsPage />} />
               <Route path="/admin/predicciones" element={<AdminPrediccionesPage />} />
               <Route path="/admin/reportes" element={<AdminReportesPage />} />
+              <Route path="/admin/ventas" element={<AdminVentasPage />} />
               <Route path="/admin/tratamientos" element={<AdminTratamientosPage />} />
               <Route path="/admin/suscripcion" element={<TenantSubscriptionPage />} />
               <Route path="/admin/kpis" element={<AdminKpisPage />} />
