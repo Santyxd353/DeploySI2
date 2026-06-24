@@ -7,6 +7,7 @@ import '../../../points/presentation/pages/customer_points_page.dart';
 import '../../../points/data/customer_points_service.dart';
 import '../../../points/data/models/customer_points_models.dart';
 import '../../../opinions/presentation/widgets/opinion_cliente_sheet.dart';
+import '../../../prescripciones/presentation/pages/upload_prescription_page.dart';
 import '../../../treatments/presentation/pages/treatments_catalog_page.dart';
 import '../../../../core/auth/auth_session_manager.dart';
 import '../../../auth/data/models/auth_user.dart';
@@ -71,6 +72,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         onOpenPayments: () {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const MyPaymentsPage()),
+          );
+        },
+        onOpenPrescriptions: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const UploadPrescriptionPage()),
           );
         },
       ),
@@ -373,10 +379,12 @@ class _HomeOverviewTab extends StatefulWidget {
   const _HomeOverviewTab({
     required this.onOpenPayments,
     required this.onOpenPoints,
+    required this.onOpenPrescriptions,
   });
 
   final VoidCallback onOpenPayments;
   final VoidCallback onOpenPoints;
+  final VoidCallback onOpenPrescriptions;
 
   @override
   State<_HomeOverviewTab> createState() => _HomeOverviewTabState();
@@ -534,9 +542,10 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.description_rounded,
-                label: 'Recetas',
+                label: 'Prescripciones',
                 toneColor: const Color(0xFF1565C0),
                 backgroundTint: const Color(0xFFEAF2FF),
+                onTap: widget.onOpenPrescriptions,
               ),
             ),
           ],
@@ -869,4 +878,3 @@ class _QuickActionCard extends StatelessWidget {
     );
   }
 }
-

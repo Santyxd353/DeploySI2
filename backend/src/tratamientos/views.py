@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from core.audit import log_system_event
 from core.rbac import tiene_permiso
 from inventarios.models import Producto
+from ventas.models import DetalleVenta
 
 from .models import DispositivoNotificacion, TratamientoActivo, TratamientoBase
 from .serializers import (
@@ -193,6 +194,16 @@ def cliente_tratamientos_disponibles(request):
     if error_response:
         return error_response
 
+    productos_comprados_ids = (
+        DetalleVenta.objects.filter(
+            venta__cliente=cliente,
+            venta__estado__in=["pagada", "preparando", "entregada"],
+            producto__estado=True,
+        )
+        .values_list("producto_id", flat=True)
+        .distinct()
+    )
+
     iniciados_ids = TratamientoActivo.objects.filter(
         cliente=cliente,
         estado__in=["activo", "pausado"],
@@ -200,7 +211,7 @@ def cliente_tratamientos_disponibles(request):
 
     disponibles = (
         TratamientoBase.objects.select_related("producto")
-        .filter(activo=True, producto__estado=True)
+        .filter(activo=True, producto__estado=True, producto_id__in=productos_comprados_ids)
         .exclude(id__in=iniciados_ids)
         .order_by("nombre_publico")
     )

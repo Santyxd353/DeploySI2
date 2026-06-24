@@ -33,9 +33,34 @@ def _sync_carrito_pk_sequence():
         )
 
 
+@transaction.atomic
 def obtener_o_crear_carrito_activo(*, usuario):
-    carrito = Carrito.objects.filter(usuario=usuario, estado="activo").order_by("-updated_at").first()
-    if carrito:
+    carritos_activos = list(
+        Carrito.objects.select_for_update()
+        .filter(usuario=usuario, estado="activo")
+        .order_by("-updated_at", "-id")
+    )
+    if carritos_activos:
+        carrito = carritos_activos[0]
+
+        for carrito_extra in carritos_activos[1:]:
+            for item_extra in carrito_extra.items.select_related("producto").all():
+                item_base = CarritoItem.objects.select_for_update().filter(carrito=carrito, producto=item_extra.producto).first()
+                if item_base:
+                    item_base.cantidad = int(item_base.cantidad) + int(item_extra.cantidad)
+                    item_base.precio_unitario = item_base.precio_unitario or item_extra.precio_unitario
+                    item_base.subtotal = Decimal(item_base.precio_unitario) * item_base.cantidad
+                    item_base.save(update_fields=["cantidad", "precio_unitario", "subtotal", "updated_at"])
+                else:
+                    CarritoItem.objects.create(
+                        carrito=carrito,
+                        producto=item_extra.producto,
+                        cantidad=item_extra.cantidad,
+                        precio_unitario=item_extra.precio_unitario,
+                        subtotal=item_extra.subtotal,
+                    )
+            carrito_extra.delete()
+
         if not usuario and not carrito.invitado_token:
             carrito.ensure_guest_token()
             carrito.save(update_fields=["invitado_token", "updated_at"])

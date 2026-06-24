@@ -53,6 +53,7 @@ TENANT_APPS = [
     "inventarios",
     "backup",
     "clientes",
+    "prescripciones",
     "tratamientos",
     "ventas",
     "carrito",
@@ -138,6 +139,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_TIMEOUT_SEC = int(os.getenv("GEMINI_TIMEOUT_SEC", "60"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
