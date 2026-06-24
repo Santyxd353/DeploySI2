@@ -23,3 +23,20 @@ export const ventasService = {
   historialVentas: (params) =>
     requestJsonWithAuthRetry(`/api/ventas/historial/${buildQuery(params)}`),
 };
+
+export const ventasAdminService = {
+  /**
+   * GET /api/admin/ventas/dashboard/
+   * RBAC: requiere permiso "ventas.ver" (o superusuario).
+   */
+  dashboard: (params) =>
+    requestJsonWithAuthRetry(`/api/admin/ventas/dashboard/${buildQuery(params)}`),
+
+  /**
+   * GET /api/admin/ventas/lista/
+   * params: { page?, page_size?, search?, estado?, origen?, fecha_desde?, fecha_hasta? }
+   * RBAC: requiere permiso "ventas.ver" (o superusuario).
+   */
+  lista: (params) =>
+    requestJsonWithAuthRetry(`/api/admin/ventas/lista/${buildQuery(params)}`),
+};

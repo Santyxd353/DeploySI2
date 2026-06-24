@@ -1,10 +1,11 @@
-﻿from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 
 import stripe
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Max, Min, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -15,7 +16,10 @@ from clientes.models import Cliente
 from core.audit import log_system_event
 from carrito.models import Carrito
 
-from .serializers import POSVentaInputSerializer, VentaCreateInputSerializer, VentaSerializer
+from .serializers import (
+    POSVentaInputSerializer, VentaCreateInputSerializer, VentaSerializer,
+    VentaClienteSerializer, VentaAdminSerializer
+)
 from .services import VentaServiceError, crear_venta_service, crear_payment_intent, verificar_payment_intent
 from .models import DetalleVenta, Factura, Venta
 
@@ -280,7 +284,7 @@ def crear_venta_pos(request):
     return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 
 
-# ========== NUEVAS VISTAS DE STRIPE Y FACTURACIÓN ==========
+# ========== NUEVAS VISTAS DE STRIPE Y FACTURACI�N ==========
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -291,27 +295,27 @@ def crear_intent_pago(request):
     """
     total = request.data.get('total')
     metadata_raw = request.data.get('metadata') if isinstance(request.data, dict) else None
-    
+
     if not total:
         return Response(
             {'detail': 'El campo "total" es requerido.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     try:
         total_decimal = Decimal(str(total))
     except:
         return Response(
-            {'detail': 'Total inválido.'},
+            {'detail': 'Total inv�lido.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     if total_decimal <= 0:
         return Response(
             {'detail': 'El total debe ser mayor a 0.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     metadata = {}
     if isinstance(metadata_raw, dict):
         for key, value in metadata_raw.items():
@@ -440,7 +444,7 @@ def confirmar_pago_venta(request):
         entidad_id=str(venta.id),
     )
 
-    # Actualizar Pedido con coordenadas y dirección (la señal ya lo creó sin coordenadas)
+    # Actualizar Pedido con coordenadas y direcci�n (la se�al ya lo cre� sin coordenadas)
     if created and (lat_entrega is not None and lon_entrega is not None):
         try:
             from decimal import Decimal as _D
@@ -485,7 +489,7 @@ def obtener_factura(request, numero_factura):
             {'detail': 'Factura no encontrada.'},
             status=status.HTTP_404_NOT_FOUND
         )
-    
+
     # Serializar manualmente (o usar serializer si lo prefieres)
     data = {
         'id': factura.id,
@@ -510,7 +514,7 @@ def obtener_factura(request, numero_factura):
             for d in factura.venta.detalles.all()
         ]
     }
-    
+
     return Response(data, status=status.HTTP_200_OK)
 
 
@@ -627,7 +631,7 @@ def listar_historial_ventas(request):
     """
     GET /api/ventas/historial/
     Query params:
-      - cliente_id  (solo admin/farmacéutico/cajero)
+      - cliente_id  (solo admin/farmac�utico/cajero)
       - page        (default 1)
       - page_size   (default 10, max 50)
       - estado      (pendiente|pagada|preparando|entregada|cancelada)
@@ -635,8 +639,8 @@ def listar_historial_ventas(request):
       - fecha_hasta (YYYY-MM-DD)
 
     RBAC:
-      - ventas.ver → puede filtrar por cualquier cliente_id
-      - ROLE_CLIENTE → solo sus propias ventas (ignora cliente_id)
+      - ventas.ver ? puede filtrar por cualquier cliente_id
+      - ROLE_CLIENTE ? solo sus propias ventas (ignora cliente_id)
     """
     from core.rbac import tiene_permiso
 
@@ -705,7 +709,7 @@ def listar_historial_ventas(request):
         for p in productos_frecuentes_qs
     ]
 
-    # Paginación
+    # Paginaci�n
     try:
         page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(max(1, int(request.query_params.get("page_size", 10))), 50)
@@ -767,4 +771,292 @@ def listar_historial_ventas(request):
         "results": results,
         "resumen": resumen,
         "productos_frecuentes": productos_frecuentes,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def obtener_estadisticas_cliente(request):
+    """
+    GET /api/ventas/historial/estadisticas/
+
+    HU-18: Estad�sticas personales del cliente autenticado.
+
+    Devuelve:
+    {
+        "total_gastado": float,
+        "total_compras": int,
+        "ticket_promedio": float,
+        "ultima_compra": object,
+        "compras_este_mes": int,
+        "estado_pagada_count": int,
+        "estado_pendiente_count": int,
+    }
+    """
+    usuario = request.user
+
+    try:
+        cliente = usuario.cliente
+    except:
+        return Response(
+            {"detail": "Usuario no tiene cliente asociado"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Solo ventas completadas (pagadas o entregadas)
+    qs_completadas = Venta.objects.filter(
+        tenant=request.tenant,
+        cliente=cliente,
+        estado__in=['pagada', 'entregada']
+    )
+
+    # Agregados de ventas completadas
+    agg = qs_completadas.aggregate(
+        total=Sum('total'),
+        cantidad=Count('id')
+    )
+
+    total_gastado = float(agg['total'] or 0)
+    total_compras = agg['cantidad'] or 0
+
+    # Ticket promedio
+    ticket_promedio = 0
+    if total_compras > 0:
+        ticket_promedio = round(total_gastado / total_compras, 2)
+
+    # �ltima compra
+    ultima_compra = qs_completadas.order_by('-created_at').first()
+    ultima_compra_data = None
+    if ultima_compra:
+        ultima_compra_data = VentaClienteSerializer(ultima_compra).data
+
+    # Compras este mes
+    from django.utils import timezone
+    hoy = timezone.now()
+    primer_dia_mes = hoy.replace(day=1)
+    compras_este_mes = qs_completadas.filter(
+        created_at__gte=primer_dia_mes
+    ).count()
+
+    # Contar por estado
+    qs_todas = Venta.objects.filter(
+        tenant=request.tenant,
+        cliente=cliente
+    )
+    estado_pagada_count = qs_todas.filter(estado='pagada').count()
+    estado_pendiente_count = qs_todas.filter(estado='pendiente').count()
+    estado_entregada_count = qs_todas.filter(estado='entregada').count()
+    estado_cancelada_count = qs_todas.filter(estado='cancelada').count()
+
+    stats = {
+        "total_gastado": total_gastado,
+        "total_compras": total_compras,
+        "ticket_promedio": ticket_promedio,
+        "ultima_compra": ultima_compra_data,
+        "compras_este_mes": compras_este_mes,
+        "estado_pagada_count": estado_pagada_count,
+        "estado_pendiente_count": estado_pendiente_count,
+        "estado_entregada_count": estado_entregada_count,
+        "estado_cancelada_count": estado_cancelada_count,
+    }
+
+    return Response(stats)
+
+
+# ========== HU-36: DASHBOARD ADMIN DE VENTAS ==========
+
+def _require_ventas_ver(request):
+    from core.rbac import tiene_permiso
+
+    tenant = getattr(request, "tenant", None)
+    if request.user.is_superuser:
+        return None
+    if not tiene_permiso(request.user, "ventas.ver", tenant=tenant):
+        return Response({"detail": "No tienes permiso para ver ventas."}, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
+def _periodo_resumen(qs):
+    agg = qs.filter(estado__in=_ESTADOS_COMPLETADOS).aggregate(total=Sum("total"), ventas=Count("id"))
+    total = float(agg["total"] or 0)
+    ventas = agg["ventas"] or 0
+    return {
+        "ventas": ventas,
+        "total": total,
+        "promedio": round(total / ventas, 2) if ventas else 0,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_ventas_dashboard(request):
+    """
+    GET /api/admin/ventas/dashboard/
+
+    RBAC: requiere permiso "ventas.ver" (o superusuario).
+
+    Devuelve KPIs de ventas: totales por periodo (hoy/semana/mes/anio),
+    ticket promedio general, top vendedores, top productos,
+    ventas por estado y ventas por origen.
+    """
+    denied = _require_ventas_ver(request)
+    if denied is not None:
+        return denied
+
+    base_qs = Venta.objects.all()
+
+    ahora = timezone.now()
+    inicio_hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_semana = ahora - timezone.timedelta(days=7)
+    inicio_mes = ahora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    inicio_anio = ahora.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    hoy = _periodo_resumen(base_qs.filter(created_at__gte=inicio_hoy))
+    semana = _periodo_resumen(base_qs.filter(created_at__gte=inicio_semana))
+    mes = _periodo_resumen(base_qs.filter(created_at__gte=inicio_mes))
+    anio = _periodo_resumen(base_qs.filter(created_at__gte=inicio_anio))
+
+    completadas_qs = base_qs.filter(estado__in=_ESTADOS_COMPLETADOS)
+    agg_general = completadas_qs.aggregate(total=Sum("total"), ventas=Count("id"))
+    total_general = float(agg_general["total"] or 0)
+    ventas_general = agg_general["ventas"] or 0
+    ticket_promedio = round(total_general / ventas_general, 2) if ventas_general else 0
+
+    top_vendedores_qs = (
+        completadas_qs
+        .filter(vendedor__isnull=False)
+        .values("vendedor_id", "vendedor__first_name", "vendedor__last_name", "vendedor__email")
+        .annotate(ventas=Count("id"), total=Sum("total"))
+        .order_by("-total")[:5]
+    )
+    top_vendedores = [
+        {
+            "nombre": (f"{v['vendedor__first_name']} {v['vendedor__last_name']}".strip() or v["vendedor__email"]),
+            "ventas": v["ventas"],
+            "total": float(v["total"] or 0),
+        }
+        for v in top_vendedores_qs
+    ]
+
+    top_productos_qs = (
+        DetalleVenta.objects.filter(venta__in=completadas_qs)
+        .values("producto__nombre_comercial")
+        .annotate(cantidad=Sum("cantidad"), total=Sum("subtotal"))
+        .order_by("-cantidad")[:5]
+    )
+    top_productos = [
+        {
+            "nombre": p["producto__nombre_comercial"],
+            "cantidad": p["cantidad"] or 0,
+            "total": float(p["total"] or 0),
+        }
+        for p in top_productos_qs
+    ]
+
+    ventas_por_estado_qs = base_qs.values("estado").annotate(total=Count("id"))
+    ventas_por_estado = {estado: 0 for estado, _ in Venta.ESTADO_CHOICES}
+    for row in ventas_por_estado_qs:
+        ventas_por_estado[row["estado"]] = row["total"]
+
+    ventas_por_origen_qs = base_qs.values("origen").annotate(total=Count("id"))
+    ventas_por_origen = {origen: 0 for origen, _ in Venta.ORIGEN_CHOICES}
+    for row in ventas_por_origen_qs:
+        ventas_por_origen[row["origen"]] = row["total"]
+
+    return Response({
+        "hoy": hoy,
+        "semana": semana,
+        "mes": mes,
+        "anio": anio,
+        "ticket_promedio": ticket_promedio,
+        "top_vendedores": top_vendedores,
+        "top_productos": top_productos,
+        "ventas_por_estado": ventas_por_estado,
+        "ventas_por_origen": ventas_por_origen,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_ventas_lista(request):
+    """
+    GET /api/admin/ventas/lista/
+    Query params:
+      - page        (default 1)
+      - page_size   (default 20, max 100)
+      - search      (busca por id de venta o nombre del cliente)
+      - estado      (pendiente|pagada|preparando|entregada|cancelada)
+      - origen      (fisica|online)
+      - fecha_desde (YYYY-MM-DD)
+      - fecha_hasta (YYYY-MM-DD)
+
+    RBAC: requiere permiso "ventas.ver" (o superusuario).
+    """
+    denied = _require_ventas_ver(request)
+    if denied is not None:
+        return denied
+
+    ventas_qs = Venta.objects.all()
+
+    search = request.query_params.get("search", "").strip()
+    if search:
+        filtro = Q(cliente__nombres__icontains=search) | Q(cliente__apellidos__icontains=search)
+        if search.isdigit():
+            filtro |= Q(id=int(search))
+        ventas_qs = ventas_qs.filter(filtro)
+
+    estado = request.query_params.get("estado")
+    if estado:
+        ventas_qs = ventas_qs.filter(estado=estado)
+
+    origen = request.query_params.get("origen")
+    if origen:
+        ventas_qs = ventas_qs.filter(origen=origen)
+
+    fecha_desde = request.query_params.get("fecha_desde")
+    if fecha_desde:
+        ventas_qs = ventas_qs.filter(created_at__date__gte=fecha_desde)
+
+    fecha_hasta = request.query_params.get("fecha_hasta")
+    if fecha_hasta:
+        ventas_qs = ventas_qs.filter(created_at__date__lte=fecha_hasta)
+
+    try:
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(max(1, int(request.query_params.get("page_size", 20))), 100)
+    except (ValueError, TypeError):
+        page, page_size = 1, 20
+
+    ventas_qs = ventas_qs.select_related("cliente", "vendedor").order_by("-created_at")
+    total = ventas_qs.count()
+    start = (page - 1) * page_size
+    end = start + page_size
+    ventas_page = ventas_qs[start:end]
+
+    estado_labels = dict(Venta.ESTADO_CHOICES)
+    results = [
+        {
+            "id": v.id,
+            "cliente_nombre": f"{v.cliente.nombres} {v.cliente.apellidos}".strip() if v.cliente_id else "-",
+            "vendedor_nombre": (
+                f"{v.vendedor.first_name} {v.vendedor.last_name}".strip() or v.vendedor.email
+                if v.vendedor_id
+                else "-"
+            ),
+            "origen": v.origen,
+            "estado": v.estado,
+            "estado_label": estado_labels.get(v.estado, v.estado),
+            "total": float(v.total),
+            "created_at": v.created_at,
+        }
+        for v in ventas_page
+    ]
+
+    return Response({
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "next": page + 1 if end < total else None,
+        "previous": page - 1 if page > 1 else None,
+        "results": results,
     })
