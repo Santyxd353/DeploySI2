@@ -310,6 +310,16 @@ export function CheckCircleIcon({ className }) {
   );
 }
 
+export function InfoIcon({ className }) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <circle cx="12" cy="16" r="1" />
+    </BaseIcon>
+  );
+}
+
 export function AlertTriangleIcon({ className }) {
   return (
     <BaseIcon className={className}>

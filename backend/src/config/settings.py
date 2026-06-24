@@ -181,7 +181,7 @@ if SAAS_PUBLIC_BASE_URL and SAAS_PUBLIC_BASE_URL not in CORS_ALLOWED_ORIGINS:
 
 if SAAS_ROOT_DOMAIN:
     escaped_root = re.escape(SAAS_ROOT_DOMAIN)
-    wildcard_pattern = rf"^https?://([a-zA-Z0-9-]+\.)*{escaped_root}$"
+    wildcard_pattern = rf"^https?://([a-zA-Z0-9-]+\.)*{escaped_root}(:\d+)?$"
     if wildcard_pattern not in CORS_ALLOWED_ORIGIN_REGEXES:
         CORS_ALLOWED_ORIGIN_REGEXES.append(wildcard_pattern)
 
@@ -213,8 +213,8 @@ CORS_ALLOW_METHODS = [
     "PUT",
 ]
 
-# En modo DEBUG, permitir todos los orígenes (útil para desarrollo)
-if DEBUG:
+# En modo DEBUG, permitir todos los orígenes solo si no hay orígenes explícitos configurados.
+if DEBUG and not CORS_ALLOWED_ORIGINS and not CORS_ALLOWED_ORIGIN_REGEXES:
     CORS_ALLOW_ALL_ORIGINS = True
     if '*' not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append('*')
@@ -239,8 +239,8 @@ AUTH_ACCESS_COOKIE_NAME = os.getenv("AUTH_ACCESS_COOKIE_NAME", "access_token")
 AUTH_REFRESH_COOKIE_NAME = os.getenv("AUTH_REFRESH_COOKIE_NAME", "refresh_token")
 AUTH_ACCESS_COOKIE_AGE = int(os.getenv("AUTH_ACCESS_COOKIE_AGE", "3600"))
 AUTH_REFRESH_COOKIE_AGE = int(os.getenv("AUTH_REFRESH_COOKIE_AGE", "604800"))
-AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "False").lower() == "true"
-AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "False" if DEBUG else "True").lower() == "true"
+AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "None" if DEBUG else "Lax")
 
 # Django REST Framework
 REST_FRAMEWORK = {

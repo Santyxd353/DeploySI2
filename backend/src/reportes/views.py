@@ -3,6 +3,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.conf import settings
+from django.db.models import F, Sum
+
+from django.utils import timezone
+from datetime import timedelta
+from ventas.models import Venta
+from inventarios.models import Inventario
+from clientes.models import Cliente
 
 from core.audit import log_system_event
 from core.rbac import tiene_permiso
@@ -135,3 +142,95 @@ def interpretar_audio_view(request):
         mensaje=f"Reporte por audio generado: {result['reporte']['tipo_reporte']}",
     )
     return Response(result, status=status.HTTP_200_OK)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def dashboard_view(request):
+    denied = _require_reportes_perm(request)
+    if denied:
+        return denied
+
+    # Ventas totales (últimos 30 días)
+    hace_30_dias = timezone.now() - timedelta(days=30)
+    ventas_30d = Venta.objects.filter(
+        estado__in=['pagada', 'entregada'],
+        created_at__gte=hace_30_dias
+    )
+    total_30d = ventas_30d.aggregate(total=Sum('total'))['total'] or 0
+    cantidad_30d = ventas_30d.count()
+
+    # Ventas hoy (puede ser 0, es normal)
+    hoy = timezone.localdate()
+    inicio_hoy = timezone.make_aware(timezone.datetime.combine(hoy, timezone.datetime.min.time()))
+    fin_hoy = inicio_hoy + timedelta(days=1)
+    ventas_hoy = Venta.objects.filter(
+        estado__in=['pagada', 'entregada'],
+        created_at__gte=inicio_hoy,
+        created_at__lt=fin_hoy
+    )
+    total_hoy = ventas_hoy.aggregate(total=Sum('total'))['total'] or 0
+
+    # Pedidos pendientes
+    pedidos_pendientes = Venta.objects.filter(estado='pendiente').count()
+
+    # Stock crítico
+    stock_critico = Inventario.objects.filter(stock_actual__lte=F('stock_minimo')).count()
+
+    # Clientes activos (últimos 30 días)
+    clientes_activos = Cliente.objects.filter(
+        ventas__created_at__gte=hace_30_dias,
+        ventas__estado__in=['pagada', 'entregada']
+    ).distinct().count()
+
+    # Total productos
+    from inventarios.models import Producto
+    total_productos = Producto.objects.filter(estado=True).count()
+
+    # Pedidos recientes (últimas 10)
+    ultimas_ventas = Venta.objects.select_related('cliente').order_by('-created_at')[:10]
+    pedidos = []
+    for venta in ultimas_ventas:
+        pedidos.append({
+            "id": f"ORD-{venta.id}",
+            "cliente": str(venta.cliente) if venta.cliente else "Sin cliente",
+            "total": f"Bs {venta.total:,.2f}",
+            "estado": venta.get_estado_display(),
+            "fecha": venta.created_at.strftime("%d/%m/%Y %H:%M"),
+            "origen": venta.get_origen_display(),
+        })
+
+    return Response({
+        "kpis": [
+            {
+                "label": "Ventas (30 días)",
+                "value": f"Bs {total_30d:,.2f}",
+                "sub": f"{cantidad_30d} ventas",
+                "icon": "ventas",
+                "color": "emerald"
+            },
+            {
+                "label": "Pedidos pendientes",
+                "value": str(pedidos_pendientes),
+                "sub": "Por procesar",
+                "icon": "pendientes",
+                "color": "amber"
+            },
+            {
+                "label": "Stock crítico",
+                "value": str(stock_critico),
+                "sub": f"de {total_productos} productos",
+                "icon": "stock",
+                "color": "rose" if stock_critico > 0 else "emerald"
+            },
+            {
+                "label": "Clientes activos",
+                "value": str(clientes_activos),
+                "sub": "Últimos 30 días",
+                "icon": "clientes",
+                "color": "sky"
+            },
+        ],
+        "recentOrders": pedidos,
+    })

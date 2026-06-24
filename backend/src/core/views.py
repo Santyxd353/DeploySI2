@@ -125,9 +125,13 @@ def count_active_admin_users(tenant=None):
 
 
 def set_auth_cookies(response, access_token=None, refresh_token=None, request=None):
+    secure = settings.AUTH_COOKIE_SECURE
+    if str(settings.AUTH_COOKIE_SAMESITE).lower() == "none":
+        secure = True
+
     cookie_common_kwargs = {
         "httponly": True,
-        "secure": settings.AUTH_COOKIE_SECURE,
+        "secure": secure,
         "samesite": settings.AUTH_COOKIE_SAMESITE,
         "path": "/",
     }
