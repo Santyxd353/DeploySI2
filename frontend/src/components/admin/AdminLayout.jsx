@@ -90,7 +90,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
 
   const userManagementSectionIds = ["users", "roles-permisos"];
   const productManagementSectionIds = ["products", "labs", "categories"];
-  const securityManagementSectionIds = ["bitacora", "backups"];
+  const securityManagementSectionIds = ["bitacora", "backups", "suscripcion"];
   const inventorySectionId = "inventory";
 
   const activeSectionByPath = useMemo(() => {

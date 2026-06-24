@@ -401,7 +401,13 @@ def admin_users_list(request):
             return permission_denied
 
         user_model = get_user_model()
-        users = user_model.objects.all().order_by("-date_joined")
+        tenant = getattr(request, "tenant", None)
+
+        if tenant is not None and getattr(tenant, "schema_name", "public") != "public":
+            tenant_user_ids = TenantUser.objects.filter(tenant=tenant).values_list("user_id", flat=True)
+            users = user_model.objects.filter(id__in=tenant_user_ids).order_by("-date_joined")
+        else:
+            users = user_model.objects.all().order_by("-date_joined")
 
         search = request.query_params.get("search", "").strip()
         role = request.query_params.get("role", "all").strip().lower()
@@ -416,7 +422,6 @@ def admin_users_list(request):
             )
 
         if role != "all":
-            tenant = getattr(request, "tenant", None)
             member_ids = TenantUser.objects.filter(tenant=tenant, role=role, is_active=True).values_list("user_id", flat=True)
             users = users.filter(id__in=member_ids)
 
