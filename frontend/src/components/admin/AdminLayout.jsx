@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { adminSections } from "../../data/adminData";
 import {
+  BellIcon,
   ChartBarIcon,
   ChevronDownIcon,
   ClipboardListIcon,
@@ -11,16 +12,23 @@ import {
   MedicalCrossIcon,
   MegaphoneIcon,
   PackageIcon,
+  SaveIcon,
   ShieldIcon,
+  SparkIcon,
+  TruckIcon,
   UserIcon,
   UsersGroupIcon,
-  SaveIcon,                     // ← Para la sección de backups
-  SparkIcon,
 } from "../ui/Icons";
+import { pedidosService } from "../../services/pedidosService";
 import { useOutsideClick } from "../../hooks/useOutsideClick";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminLayout({ activeSection, setActiveSection, currentUser, onLogout, children }) {
+  const [noLeidas, setNoLeidas] = useState(0);
+  const [notifs, setNotifs] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const notifsRef = useRef(null);
+  const wsAdminRef = useRef(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showUsersSection, setShowUsersSection] = useState(false);
   const [showProductsSection, setShowProductsSection] = useState(false);
@@ -38,6 +46,35 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
   const navigate = useNavigate();
 
   useOutsideClick(userMenuRef, () => setShowUserMenu(false));
+  useOutsideClick(notifsRef, () => setShowNotifs(false));
+
+  const cargarNotifs = useCallback(async () => {
+    try {
+      const [cnt, lista] = await Promise.all([
+        pedidosService.contadorNoLeidas(),
+        pedidosService.notificaciones({ page_size: 8, no_leidas: "true" }),
+      ]);
+      setNoLeidas(cnt.no_leidas ?? 0);
+      setNotifs(lista.results ?? []);
+    } catch {
+      // silencioso
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarNotifs();
+    const token = localStorage.getItem("auth_access_token");
+    if (!token) return;
+    const ws = new WebSocket(pedidosService.wsAdminUrl(token));
+    wsAdminRef.current = ws;
+    ws.onmessage = () => cargarNotifs();
+    return () => ws.close();
+  }, [cargarNotifs]);
+
+  async function handleMarcarTodas() {
+    await pedidosService.marcarTodasLeidas();
+    cargarNotifs();
+  }
 
   const roleLabel = useMemo(() => {
     if (resolvedUser?.role === "admin") return "Administrador";
@@ -53,7 +90,7 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
 
   const userManagementSectionIds = ["users", "roles-permisos"];
   const productManagementSectionIds = ["products", "labs", "categories"];
-  const securityManagementSectionIds = ["bitacora", "backups"];
+  const securityManagementSectionIds = ["bitacora", "backups", "suscripcion"];
   const inventorySectionId = "inventory";
 
   const activeSectionByPath = useMemo(() => {
@@ -193,8 +230,9 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
     finance: DollarIcon,
     settings: CogIcon,
     spark: SparkIcon,
-    pos: DollarIcon,            // ← Sección de punto de venta
-    backup: SaveIcon,           // ← Sección de backups
+    pos: DollarIcon,
+    backup: SaveIcon,
+    truck: TruckIcon,
   };
 
   const toggleSidebar = () => {
@@ -485,6 +523,59 @@ export default function AdminLayout({ activeSection, setActiveSection, currentUs
                 <h2 className="text-xl font-black text-slate-900">Gestion operativa</h2>
                 </div>
               </div>
+              {/* Campanita de notificaciones */}
+              <div className="relative" ref={notifsRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifs((p) => !p)}
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-slate-300"
+                  aria-label="Notificaciones"
+                >
+                  <BellIcon className="h-5 w-5 text-slate-600" />
+                  {noLeidas > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-black text-white">
+                      {noLeidas > 9 ? "9+" : noLeidas}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifs && (
+                  <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <p className="text-xs font-bold text-slate-800">Notificaciones</p>
+                      {noLeidas > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMarcarTodas}
+                          className="text-xs font-semibold text-teal-600 hover:underline"
+                        >
+                          Marcar todas leídas
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifs.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-xs text-slate-400">Sin notificaciones nuevas</p>
+                      ) : notifs.map((n) => (
+                        <div key={n.id} className="px-4 py-3 hover:bg-slate-50">
+                          <p className="text-xs font-semibold text-slate-800">{n.titulo}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{n.mensaje}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-slate-100 px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => { navigate("/admin/pedidos"); setShowNotifs(false); }}
+                        className="w-full rounded-xl py-1.5 text-xs font-semibold text-teal-600 hover:bg-teal-50 transition"
+                      >
+                        Ver todos los pedidos
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"

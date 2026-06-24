@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db.models import Q
@@ -17,6 +19,22 @@ from .rbac import (
     puede_acceder_backoffice,
 )
 from .models import BitacoraSistema
+
+
+def _validate_password_strength(value):
+    errors = []
+    if len(value) < 8:
+        errors.append("mínimo 8 caracteres")
+    if not re.search(r"[A-Z]", value):
+        errors.append("al menos una letra mayúscula")
+    if not re.search(r"[a-z]", value):
+        errors.append("al menos una letra minúscula")
+    if not re.search(r"\d", value):
+        errors.append("al menos un número")
+    if not re.search(r'[!@#$%^&*()\-_=+\[\]{};:\'",.<>?/\\|`~]', value):
+        errors.append("al menos un carácter especial (!@#$%...)")
+    if errors:
+        raise serializers.ValidationError(f"La contraseña debe contener: {', '.join(errors)}.")
 
 
 def _generate_unique_username(email):
@@ -43,7 +61,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=True, max_length=150)
     last_name = serializers.CharField(required=True, max_length=150)
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = get_user_model()
@@ -55,6 +73,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         if user_model.objects.filter(email__iexact=normalized).exists():
             raise serializers.ValidationError("Este correo ya esta registrado.")
         return normalized
+
+    def validate_password(self, value):
+        _validate_password_strength(value)
+        return value
 
     def create(self, validated_data):
         from django.conf import settings
@@ -125,7 +147,7 @@ class AdminUserUpdateSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
     role = serializers.CharField(required=False)
     is_active = serializers.BooleanField(required=False)
-    password = serializers.CharField(write_only=True, min_length=6, required=False)
+    password = serializers.CharField(write_only=True, min_length=8, required=False)
 
     def _count_active_admins(self):
         user_model = get_user_model()
@@ -161,6 +183,7 @@ class AdminUserUpdateSerializer(serializers.Serializer):
         next_active = attrs.get("is_active", target_user.is_active)
 
         if "password" in attrs:
+            _validate_password_strength(attrs["password"])
             validate_password(attrs["password"])
 
         if current_role == ROLE_ADMIN and target_user.is_active and (not next_active or next_role != ROLE_ADMIN):
@@ -222,7 +245,7 @@ class AdminUserCreateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.CharField(default=ROLE_CLIENTE)
     is_active = serializers.BooleanField(default=True)
 
@@ -238,6 +261,10 @@ class AdminUserCreateSerializer(serializers.Serializer):
         if user_model.objects.filter(email__iexact=normalized).exists():
             raise serializers.ValidationError("Este correo ya esta registrado.")
         return normalized
+
+    def validate_password(self, value):
+        _validate_password_strength(value)
+        return value
 
     def create(self, validated_data):
         user_model = get_user_model()

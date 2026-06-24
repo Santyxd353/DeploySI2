@@ -11,12 +11,48 @@ import { registerUser } from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
 import { getTenantSubdomain } from "../../services/apiClient";
 
+function checkPasswordRequirements(password) {
+  return {
+    minLength: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /\d/.test(password),
+    special: /[!@#$%^&*()\-_=+[\]{};:'",.<>?/\\|`~]/.test(password),
+  };
+}
+
+const REQUIREMENTS = [
+  { key: "minLength", label: "Mínimo 8 caracteres" },
+  { key: "uppercase", label: "Una letra mayúscula" },
+  { key: "lowercase", label: "Una letra minúscula" },
+  { key: "number", label: "Un número" },
+  { key: "special", label: "Un carácter especial (!@#$%...)" },
+];
+
+function PasswordRequirements({ password, visible }) {
+  if (!visible) return null;
+  const checks = checkPasswordRequirements(password);
+  return (
+    <ul className="mt-2 space-y-1 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+      {REQUIREMENTS.map(({ key, label }) => (
+        <li key={key} className={`flex items-center gap-2 text-xs font-medium ${checks[key] ? "text-emerald-600" : "text-slate-400"}`}>
+          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${checks[key] ? "bg-emerald-100 text-emerald-600" : "bg-slate-200 text-slate-400"}`}>
+            {checks[key] ? "✓" : "✗"}
+          </span>
+          {label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const tenantSubdomain = getTenantSubdomain();
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +69,14 @@ export default function RegisterPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    const checks = checkPasswordRequirements(form.password);
+    const missing = REQUIREMENTS.filter(({ key }) => !checks[key]).map(({ label }) => label);
+    if (missing.length > 0) {
+      setError(`La contraseña debe incluir: ${missing.join(", ")}.`);
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setMessage("");
@@ -109,15 +153,17 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="register-password-page">Contrasena</Label>
+          <Label htmlFor="register-password-page">Contraseña</Label>
           <div className="relative">
             <Input
               id="register-password-page"
               className="pr-12"
-              placeholder="Minimo 6 caracteres"
+              placeholder="Mínimo 8 caracteres"
               type={showPassword ? "text" : "password"}
               value={form.password}
               onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              onFocus={() => setPasswordFocused(true)}
+              onBlur={() => setPasswordFocused(false)}
               autoComplete="new-password"
               required
               disabled={submitting}
@@ -126,12 +172,13 @@ export default function RegisterPage() {
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
               disabled={submitting}
             >
               {showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
             </button>
           </div>
+          <PasswordRequirements password={form.password} visible={passwordFocused || form.password.length > 0} />
         </div>
 
         <Button type="submit" className="w-full" disabled={submitting}>

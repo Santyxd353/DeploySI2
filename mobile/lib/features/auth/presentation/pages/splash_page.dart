@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/auth/auth_session_manager.dart';
+import '../../../auth/data/models/auth_user.dart';
 import '../../../home/presentation/pages/customer_home_page.dart';
+import '../../../orders/presentation/pages/delivery_home_page.dart';
 import 'login_page.dart';
 
 class SplashPage extends StatefulWidget {
@@ -55,10 +57,15 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
 
     if (!mounted) return;
 
-    final session = result[1];
-    final nextPage = session == null
-        ? const LoginPage()
-        : const CustomerHomePage();
+    final session = result[1] as AuthSession?;
+    Widget nextPage;
+    if (session == null) {
+      nextPage = const LoginPage();
+    } else if (session.user.isRepartidorRole) {
+      nextPage = const DeliveryHomePage();
+    } else {
+      nextPage = const CustomerHomePage();
+    }
 
     Navigator.of(
       context,

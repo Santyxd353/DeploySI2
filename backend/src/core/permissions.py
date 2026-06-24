@@ -14,3 +14,29 @@ class IsPharmacistOrAdmin(permissions.BasePermission):
             return False
         role = obtener_rol_usuario(request.user)
         return role in (ROLE_ADMIN, ROLE_FARMACEUTICO)
+
+
+class IsAdmin(permissions.BasePermission):
+    """
+    Permite acceso solo a usuarios con rol ADMIN.
+    Usado en HU-36 para restricción de permisos.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        role = obtener_rol_usuario(request.user)
+        return role == ROLE_ADMIN
+
+
+class IsAdminOrPharmacist(permissions.BasePermission):
+    """
+    Permite acceso a ADMIN y FARMACEUTICO.
+    Usado en HU-36 para gestión de ventas.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        role = obtener_rol_usuario(request.user)
+        return role in [ROLE_ADMIN, ROLE_FARMACEUTICO]

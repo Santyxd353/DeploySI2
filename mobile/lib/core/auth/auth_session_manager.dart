@@ -45,7 +45,7 @@ class AuthSessionManager {
     try {
       var user = await _authService.getProfile(access);
 
-      if (!user.isClientRole) {
+      if (!user.canAccessMobileApp) {
         await clearSession();
         return null;
       }
@@ -64,7 +64,7 @@ class AuthSessionManager {
         access = await _authService.refreshToken(refresh);
         final user = await _authService.getProfile(access);
 
-        if (!user.isClientRole) {
+        if (!user.canAccessMobileApp) {
           await clearSession();
           return null;
         }

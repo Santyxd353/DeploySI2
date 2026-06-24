@@ -5,6 +5,7 @@ import '../../../../core/auth/auth_session_manager.dart';
 import '../../../../core/config/tenant_config.dart';
 import '../../../auth/data/auth_service.dart';
 import '../../../home/presentation/pages/customer_home_page.dart';
+import '../../../orders/presentation/pages/delivery_home_page.dart';
 import 'forgot_password_page.dart';
 import 'register_page.dart';
 import 'verify_email_page.dart';
@@ -119,11 +120,10 @@ class _LoginPanelState extends State<_LoginPanel> {
         password: password,
       );
 
-      if (!session.user.isClientRole) {
+      if (!session.user.canAccessMobileApp) {
         setState(() {
           _isSubmitting = false;
-          _errorMessage =
-              'Esta app movil esta destinada solo a usuarios clientes.';
+          _errorMessage = 'Acceso no permitido para este tipo de usuario.';
         });
         return;
       }
@@ -131,8 +131,11 @@ class _LoginPanelState extends State<_LoginPanel> {
       await AuthSessionManager.saveSession(session);
 
       if (!mounted) return;
+      final home = session.user.isRepartidorRole
+          ? const DeliveryHomePage()
+          : const CustomerHomePage();
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const CustomerHomePage()),
+        MaterialPageRoute(builder: (_) => home),
       );
     } on AuthServiceException catch (error) {
       if (!mounted) return;

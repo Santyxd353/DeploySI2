@@ -133,9 +133,17 @@ class Command(BaseCommand):
                     impuesto=impuesto,
                     total=total,
                     observacion=f"Venta simulada - {current_date}",
-                    created_at=venta_datetime,
-                    updated_at=venta_datetime
                 )
+                # created_at/updated_at usan auto_now_add/auto_now, por lo que
+                # Venta.objects.create() ignora los valores pasados arriba.
+                # Usamos .update() para forzar la fecha historica simulada
+                # sin pasar por save() (que las sobreescribiria con timezone.now()).
+                Venta.objects.filter(pk=venta.pk).update(
+                    created_at=venta_datetime,
+                    updated_at=venta_datetime,
+                )
+                venta.created_at = venta_datetime
+                venta.updated_at = venta_datetime
 
                 for det in detalles:
                     DetalleVenta.objects.create(

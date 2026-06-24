@@ -8,6 +8,7 @@ from .views import (
     confirmar_pago_venta,
     listar_mis_facturas,
     listar_historial_ventas,
+    obtener_estadisticas_cliente,
     obtener_factura,
     stripe_webhook,
 )
@@ -20,6 +21,7 @@ urlpatterns = [
 
     # HU-18: Historial de ventas con RBAC y paginación
     path("historial/", listar_historial_ventas, name="ventas-historial"),
+    path("historial/estadisticas/", obtener_estadisticas_cliente, name="ventas-estadisticas"),
 
     # Stripe + Facturación
     path("intent-pago/", crear_intent_pago, name="crear_intent_pago"),

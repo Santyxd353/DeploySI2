@@ -59,6 +59,9 @@ class PaymentService {
     required Map<String, dynamic> datosFactura,
     String? carritoToken,
     String? accessToken,
+    double? latEntrega,
+    double? lonEntrega,
+    String? direccionTexto,
   }) async {
     final response = await _apiClient.post(
       '/api/ventas/confirmar-pago/',
@@ -68,6 +71,10 @@ class PaymentService {
         if (carritoToken != null && carritoToken.trim().isNotEmpty)
           'carrito_token': carritoToken.trim(),
         'datos_factura': datosFactura,
+        if (latEntrega != null) 'lat_entrega': latEntrega,
+        if (lonEntrega != null) 'lon_entrega': lonEntrega,
+        if (direccionTexto != null && direccionTexto.isNotEmpty)
+          'direccion_texto': direccionTexto,
       },
     );
 
