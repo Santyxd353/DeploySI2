@@ -7,6 +7,7 @@ import '../../../points/presentation/pages/customer_points_page.dart';
 import '../../../points/data/customer_points_service.dart';
 import '../../../points/data/models/customer_points_models.dart';
 import '../../../opinions/presentation/widgets/opinion_cliente_sheet.dart';
+import '../../../orders/presentation/pages/my_orders_page.dart';
 import '../../../prescripciones/presentation/pages/upload_prescription_page.dart';
 import '../../../treatments/presentation/pages/treatments_catalog_page.dart';
 import '../../../../core/auth/auth_session_manager.dart';
@@ -43,9 +44,9 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         return;
       }
 
-      print("âœ… Usuario autenticado: ${session.user.email}");
+      print("Usuario autenticado: ${session.user.email}");
     } catch (e) {
-      print("ðŸš¨ Error de conexiÃ³n: $e");
+      print("Error de conexion: $e");
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
@@ -73,6 +74,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
           Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const MyPaymentsPage()));
+        },
+        onOpenOrders: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const MyOrdersPage()));
         },
         onOpenPrescriptions: () {
           Navigator.of(context).push(
@@ -356,7 +362,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                     foregroundColor: const Color(0xFFBA1A1A),
                   ),
                   label: Text(
-                    _loggingOut ? 'Cerrando sesiÃ³n...' : 'Cerrar sesiÃ³n',
+                    _loggingOut ? 'Cerrando sesion...' : 'Cerrar sesion',
                     style: GoogleFonts.manrope(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -375,11 +381,13 @@ class _ProfileTabState extends State<_ProfileTab> {
 class _HomeOverviewTab extends StatefulWidget {
   const _HomeOverviewTab({
     required this.onOpenPayments,
+    required this.onOpenOrders,
     required this.onOpenPoints,
     required this.onOpenPrescriptions,
   });
 
   final VoidCallback onOpenPayments;
+  final VoidCallback onOpenOrders;
   final VoidCallback onOpenPoints;
   final VoidCallback onOpenPrescriptions;
 
@@ -498,7 +506,7 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Consulta catÃ¡logo, recetas, puntos y pagos desde nuestra app mÃ³vil.',
+                'Consulta catalogo, recetas, puntos y pagos desde nuestra app movil.',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.9),
                   fontSize: 15,
@@ -516,7 +524,7 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
         const SizedBox(height: 24),
 
         Text(
-          'Accesos rÃ¡pidos',
+          'Accesos rapidos',
           style: GoogleFonts.manrope(
             fontWeight: FontWeight.w800,
             fontSize: 20,
@@ -530,7 +538,7 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.medical_services_rounded,
-                label: 'CatÃ¡logo',
+                label: 'Catalogo',
                 toneColor: const Color(0xFF006A5E),
                 backgroundTint: const Color(0xFFEAF8F4),
               ),
@@ -587,6 +595,16 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
                     ),
                   );
                 },
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _QuickActionCard(
+                icon: Icons.local_shipping_rounded,
+                label: 'Mis Pedidos',
+                toneColor: const Color(0xFF1565C0),
+                backgroundTint: const Color(0xFFEAF2FF),
+                onTap: widget.onOpenOrders,
               ),
             ),
           ],
@@ -682,7 +700,7 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
                     ),
                     Text(
                       canRedeem
-                          ? 'Ya puedes canjear recompensas del catÃ¡logo'
+                          ? 'Ya puedes canjear recompensas del catalogo'
                           : 'Te faltan $pointsToRedeem puntos para el primer canje',
                       style: GoogleFonts.manrope(
                         color: const Color(0xFF6F7977),
@@ -705,7 +723,7 @@ class _HomeOverviewTabState extends State<_HomeOverviewTab> {
           if (_pointsError != null) ...[
             const SizedBox(height: 10),
             Text(
-              'No pudimos cargar todos los detalles, pero puedes abrir el mÃ³dulo de puntos igual.',
+              'No pudimos cargar todos los detalles, pero puedes abrir el modulo de puntos igual.',
               style: GoogleFonts.manrope(
                 color: const Color(0xFF6F7977),
                 fontSize: 12,
