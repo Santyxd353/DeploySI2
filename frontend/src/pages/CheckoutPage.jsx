@@ -13,6 +13,8 @@ import { Button } from "../components/ui/button";
 import { carritoService, pagosService } from "../services/carritoService";
 import { puntosService } from "../services/puntosService";
 import { useAuth } from "../context/AuthContext";
+import SimulatedQrModal from "../components/payments/SimulatedQrModal";
+import SaleNote from "../components/payments/SaleNote";
 
 // Cargar Stripe con la clave pública
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
@@ -283,6 +285,135 @@ function PaymentForm({ total, onSuccess, onError, onCartCleared, onCartSynced })
   );
 }
 
+function QrPaymentForm({ total, onSuccess, onError, onCartCleared, onCartSynced }) {
+  const [processing, setProcessing] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [operationCode, setOperationCode] = useState("");
+  const [nombreCliente, setNombreCliente] = useState("");
+  const [emailCliente, setEmailCliente] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [nitCi, setNitCi] = useState("");
+
+  const datosFactura = useMemo(() => ({
+    nombre_cliente: nombreCliente.trim(),
+    email_cliente: emailCliente.trim(),
+    telefono: telefono.trim(),
+    nit_ci: nitCi.trim(),
+  }), [nombreCliente, emailCliente, telefono, nitCi]);
+
+  const handleOpenQr = async (e) => {
+    e.preventDefault();
+    if (!datosFactura.nombre_cliente || !datosFactura.email_cliente) {
+      onError("Complete nombre y email para generar la nota de venta.");
+      return;
+    }
+
+    setProcessing(true);
+    onError(null);
+    try {
+      const carritoActual = await carritoService.listar();
+      const totalBackend = toNumber(carritoActual?.total, 0);
+      if (totalBackend <= 0) {
+        throw new Error("El carrito esta vacio o no tiene total valido.");
+      }
+      onCartSynced?.(carritoActual);
+      setOperationCode(`WEBQR-${Date.now().toString().slice(-8)}`);
+      setShowQr(true);
+    } catch (err) {
+      onError(extractErrorMessage(err));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleConfirmQr = async () => {
+    setProcessing(true);
+    onError(null);
+    try {
+      const data = await carritoService.confirmarQrSimulado({
+        datosFactura,
+        observacion: `Pago QR simulado web ${operationCode}`,
+      });
+      sessionStorage.setItem("just_paid", "true");
+      onCartCleared?.();
+      onSuccess?.(data);
+    } catch (err) {
+      onError(extractErrorMessage(err));
+    } finally {
+      setProcessing(false);
+      setShowQr(false);
+    }
+  };
+
+  return (
+    <>
+      <form onSubmit={handleOpenQr} className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-bold text-slate-700">Nombre completo *</label>
+            <input
+              type="text"
+              value={nombreCliente}
+              onChange={(e) => setNombreCliente(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="Juan Perez"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-bold text-slate-700">Correo electronico *</label>
+            <input
+              type="email"
+              value={emailCliente}
+              onChange={(e) => setEmailCliente(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="juan@example.com"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-bold text-slate-700">Telefono</label>
+            <input
+              type="tel"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="77777777"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-bold text-slate-700">NIT/CI</label>
+            <input
+              type="text"
+              value={nitCi}
+              onChange={(e) => setNitCi(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="12345678"
+            />
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={processing}
+          className="h-11 w-full bg-teal-700 text-base font-black hover:bg-teal-600 disabled:opacity-50"
+        >
+          {processing ? "Preparando QR..." : `Generar QR simulado ${formatPrecio(total)}`}
+        </Button>
+      </form>
+
+      <SimulatedQrModal
+        open={showQr}
+        title="Pago web con QR simulado"
+        amount={total}
+        operationCode={operationCode}
+        payload={JSON.stringify({ tipo: "WEB_QR_SIMULADO", total, operationCode, datosFactura })}
+        processing={processing}
+        onCancel={() => setShowQr(false)}
+        onConfirm={handleConfirmQr}
+      />
+    </>
+  );
+}
+
 // Componente principal
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -458,6 +589,7 @@ export default function CheckoutPage() {
                 {paymentSuccess.factura?.numero || "Pendiente"}
               </p>
             </div>
+            <SaleNote payload={paymentSuccess} className="mb-6 text-left" />
             <div className="flex gap-3 justify-center">
               <Button
                 onClick={() => navigate("/", { replace: true })}
@@ -661,7 +793,32 @@ export default function CheckoutPage() {
               {/* Formulario de pago con Stripe */}
               <section className="rounded-xl border border-slate-200 bg-white p-4">
                 <h2 className="text-xl font-black text-slate-900">Datos de pago</h2>
-                <div className="mt-3">
+                <div className="mt-3 rounded-2xl border border-teal-100 bg-teal-50/50 p-4">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-900">Pago QR simulado</p>
+                      <p className="text-xs font-semibold text-slate-500">
+                        Genera un QR de demostracion y confirma solo con Realizar pago.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-teal-700 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-white">
+                      QR
+                    </span>
+                  </div>
+                  <QrPaymentForm
+                    total={totalConEnvio}
+                    onSuccess={handlePaymentSuccess}
+                    onError={handlePaymentError}
+                    onCartCleared={handleCartCleared}
+                    onCartSynced={hydrateCartFromBackend}
+                  />
+                </div>
+                <div className="my-4 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-slate-200" />
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">o tarjeta</span>
+                  <span className="h-px flex-1 bg-slate-200" />
+                </div>
+                <div>
                   <Elements stripe={stripePromise}>
                     <PaymentForm
                       total={totalConEnvio}

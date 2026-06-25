@@ -1,0 +1,72 @@
+CAMBIOS LOCALES PARA EJECUTAR SIN DOCKER
+Fecha inicial de documentacion: 2026-04-04
+
+1. Archivo modificado: .env.example
+- Se agrego `http://127.0.0.1:5173` a `CORS_ALLOWED_ORIGINS`.
+- Motivo: el frontend local se esta levantando en `127.0.0.1:5173` y sin eso el navegador bloquea el login por CORS.
+- Impacto para el equipo: no rompe Docker; solo amplia los origenes permitidos para desarrollo local.
+
+2. Archivo local no versionado: .env
+- Se creo un `.env` local para ejecutar el proyecto sin Docker.
+- Valores usados localmente:
+  - POSTGRES_DB=app_db
+  - POSTGRES_USER=postgres
+  - POSTGRES_PASSWORD=FarmaciaSI2pg2026!
+  - POSTGRES_PORT=5432
+  - DJANGO_PORT=8000
+  - REACT_PORT=5173
+  - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+- Impacto para el equipo: ninguno directo porque `.env` esta ignorado por Git.
+
+3. Archivos locales no versionados: scripts/start-backend.ps1 y scripts/start-frontend.ps1
+- Se crearon para levantar backend y frontend en Windows sin Docker.
+- start-backend.ps1:
+  - carga variables desde `.env`
+  - ejecuta Django en `127.0.0.1:8000`
+- start-frontend.ps1:
+  - define `VITE_API_BASE_URL=http://127.0.0.1:8000`
+  - ejecuta Vite en `127.0.0.1:5173`
+- Impacto para el equipo: ninguno directo mientras no se dependan de estos scripts en Docker.
+
+4. Dependencias/entorno local usados fuera del repo
+- PostgreSQL 16 instalado localmente como servicio de Windows.
+- Python virtualenv en `.venv`.
+- Node/NPM instalados localmente.
+- Motivo: la maquina actual no puede usar Docker.
+
+5. Forma de arranque local sin Docker
+- Backend:
+  - `.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-backend.ps1`
+- Frontend:
+  - `cd frontend`
+  - `npm.cmd ci`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start-frontend.ps1`
+- Migraciones:
+  - `.\.venv\Scripts\python.exe backend\src\manage.py migrate`
+
+6. Archivos/carpetas locales de apoyo
+- `run-logs/` se usa solo para logs locales de backend y frontend.
+- Impacto para el equipo: ninguno; no forma parte del sistema.
+
+NOTA
+- Cualquier cambio futuro relacionado con arranque local, credenciales, puertos, CORS, scripts o configuraciones que puedan afectar a otros entornos se seguira registrando aqui.
+
+7. HU-09 implementada: modulo de inventarios con stock disponible
+- Se agrego backend funcional en `backend/src/inventarios/`.
+- Se creo la migracion `backend/src/inventarios/migrations/0001_initial.py`.
+- La migracion crea la tabla de inventario y carga datos demo iniciales de stock.
+- Se agrego el endpoint `GET /api/inventarios/stock/`.
+- El endpoint exige autenticacion y permiso `inventario.ver`.
+- Se implemento la pantalla frontend real en `/admin/inventarios`.
+- Impacto para el equipo:
+  - despues de actualizar el repo deben ejecutar `python manage.py migrate` o su equivalente en Docker
+  - si no corren migraciones, el modulo de inventarios no funcionara
+
+8. Ajuste de host local en frontend para cookies de autenticacion
+- Se actualizo `frontend/src/services/apiClient.js`.
+- Motivo: si el frontend se abre en `localhost` pero la API queda configurada en `127.0.0.1` (o al reves), el navegador puede no reenviar cookies JWT por tratarlo como sitio cruzado.
+- Solucion aplicada:
+  - si la URL de la API configurada usa `localhost` o `127.0.0.1`, el frontend la normaliza automaticamente al mismo host con el que se abrio la app.
+- Impacto para el equipo:
+  - mejora compatibilidad local sin afectar despliegues con dominios distintos

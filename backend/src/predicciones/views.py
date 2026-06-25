@@ -12,10 +12,21 @@ from django.utils import timezone
 from datetime import timedelta
 import pandas as pd
 import numpy as np
-import traceback       # ← para depurar errores del modelo
+import traceback
 
 predictor = SalesPredictor()
 predictor.load_model()
+
+# Función auxiliar para obtener estación (misma que en SalesDataService)
+def get_estacion(mes):
+    if mes in [12, 1, 2]:
+        return 0
+    elif mes in [3, 4, 5]:
+        return 1
+    elif mes in [6, 7, 8]:
+        return 2
+    else:
+        return 3
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -33,44 +44,83 @@ def predecir_demanda(request):
     ultima_fecha = df_hist['fecha'].max()
     fechas_futuras = [ultima_fecha + timedelta(days=i+1) for i in range(dias)]
     
+    # ============ CONSTRUCCIÓN DE FEATURES FUTURAS CON RECURSIÓN ============
+    # 1. Datos históricos más recientes (última fila por producto)
+    last_row = df_hist[df_hist['fecha'] == ultima_fecha].iloc[-1]
+
+    # 2. Valores iniciales para la recursión
+    lag1 = last_row['unidades']
+    prom_movil_7 = last_row['promedio_movil_7']
+    tendencia = last_row['tendencia']
+
+    # Intentar obtener lag7 del dato de hace 7 días (si existe)
+    dato_lag7 = df_hist[df_hist['fecha'] == ultima_fecha - timedelta(days=7)]
+    lag7 = dato_lag7['unidades'].values[0] if not dato_lag7.empty else lag1
+
+    # Buffer circular para simular lags
+    buffer = df_hist['unidades'].values[-7:].tolist()  # últimos 7 valores reales
+
+    # Variables para el modelo
+    modelo_activo = True
+    media_base = df_hist['unidades'].mean()
+    desviacion = df_hist['unidades'].std()
+    if pd.isna(desviacion) or desviacion == 0:
+        desviacion = media_base * 0.1
+
     future_data = []
-    for fecha in fechas_futuras:
-        ultimos_7 = df_hist[df_hist['fecha'] >= ultima_fecha - timedelta(days=7)]
-        lag1 = ultimos_7['unidades'].iloc[-1] if len(ultimos_7) > 0 else 0
-        lag7 = ultimos_7['unidades'].iloc[-7] if len(ultimos_7) >= 7 else lag1
-        promedio_movil = ultimos_7['unidades'].mean() if len(ultimos_7) > 0 else 0
-        ultimos_30 = df_hist[df_hist['fecha'] >= ultima_fecha - timedelta(days=30)]
-        if len(ultimos_30) > 1:
-            x = np.arange(len(ultimos_30))
-            y = ultimos_30['unidades'].values
-            tendencia = np.polyfit(x, y, 1)[0]
-        else:
-            tendencia = 0
-        future_data.append({
+    predicciones = []
+
+    for i, fecha in enumerate(fechas_futuras):
+        # Construir fila con los valores actualizados
+        row = {
             'fecha': fecha,
             'producto_id': producto_id,
             'dia_semana': fecha.weekday(),
             'mes': fecha.month,
             'fin_semana': 1 if fecha.weekday() >= 5 else 0,
-            'estacion': ((fecha.month % 12) // 3),
-            'promedio_movil_7': promedio_movil,
+            'estacion': get_estacion(fecha.month),
+            'promedio_movil_7': prom_movil_7,
             'tendencia': tendencia,
             'unidades_lag1': lag1,
-            'unidades_lag7': lag7
-        })
-    
-        df_future = pd.DataFrame(future_data)
+            'unidades_lag7': lag7,
+        }
+        future_data.append(row)
 
-    try:
-        predicciones = predictor.predict(producto_id, df_future)
-        modelo_activo = True
-    except Exception as e:
-        # Si el modelo falla, generamos una predicción simulada basada en el promedio
-        # y la tendencia de los datos históricos recientes
-        print(f"Error en predicción (usando simulación): {e}")
-        traceback.print_exc()
-        modelo_activo = False
+        # Predecir el día actual
+        X_single = pd.DataFrame([row])
+        X_single = X_single[['producto_id', 'dia_semana', 'mes', 'estacion', 'fin_semana',
+                             'promedio_movil_7', 'tendencia', 'unidades_lag1', 'unidades_lag7']]
 
+        try:
+            pred_single = predictor.predict(producto_id, X_single)[0]
+        except Exception as e:
+            # Si el modelo falla en un día, usamos la media histórica con ruido
+            print(f"Error en predicción diaria (usando simulación): {e}")
+            modelo_activo = False
+            pred_single = media_base + np.random.normal(0, desviacion * 0.3)
+            pred_single = max(0, pred_single)
+
+        predicciones.append(pred_single)
+
+        # Actualizar variables para el siguiente día
+        buffer.pop(0)
+        buffer.append(pred_single)
+
+        lag1 = pred_single
+        lag7 = buffer[0] if len(buffer) >= 7 else lag1
+
+        prom_movil_7 = np.mean(buffer)
+
+        if len(buffer) >= 8:
+            tendencia = np.mean(buffer[-3:]) - np.mean(buffer[-8:-3])
+        else:
+            tendencia = last_row['tendencia']
+
+    # Fuera del bucle, construimos df_future para compatibilidad
+    df_future = pd.DataFrame(future_data)
+
+    # Si el modelo falló en todas las iteraciones, generamos predicción simulada global
+    if not modelo_activo:
         # Calcular promedio y desviación de los últimos 7 días
         ultimos_7_df = df_hist[df_hist['fecha'] >= ultima_fecha - timedelta(days=7)]
         if not ultimos_7_df.empty:
@@ -81,17 +131,15 @@ def predecir_demanda(request):
             desviacion = df_hist['unidades'].std()
 
         if pd.isna(desviacion) or desviacion == 0:
-            desviacion = media_base * 0.1  # 10% de variación si no hay desviación
+            desviacion = media_base * 0.1
 
-        # Generar predicciones con tendencia y algo de ruido
         predicciones = []
         tendencia_diaria = df_future['tendencia'].values[0] if not df_future.empty else 0
         
         for i in range(dias):
-            # Base: media + tendencia + ruido aleatorio
             valor = media_base + (tendencia_diaria * i) + np.random.normal(0, desviacion * 0.3)
-            valor = max(0, valor)  # No puede ser negativo
-            predicciones.append(valor)
+            predicciones.append(max(0, valor))
+    # ============ FIN CONSTRUCCIÓN DE FEATURES FUTURAS ============
 
     predicciones_list = [
         {"fecha": df_future.iloc[i]['fecha'].date(), "unidades": round(float(pred), 2)}
@@ -247,34 +295,55 @@ def tendencias_consumo(request):
 @permission_classes([AllowAny])
 @csrf_exempt
 def patrones_estacionales(request):
+    from django.db.models import Count
+    from collections import defaultdict
+
+    # Obtener el tenant actual de la petición
+    tenant = request.tenant
+    if not tenant:
+        return Response({"error": "No se pudo determinar el tenant"}, status=400)
+
+    hace_un_ano = timezone.now() - timedelta(days=365)
+
+    # Filtrar explícitamente por tenant
     ventas_por_mes = DetalleVenta.objects.filter(
         venta__estado__in=['pagada', 'entregada'],
-        venta__created_at__gte=timezone.now() - timedelta(days=365)
+        venta__created_at__gte=hace_un_ano,
+        tenant=tenant  # <--- filtro forzado
+    ).annotate(
+        mes=ExtractMonth('venta__created_at')
     ).values(
         'producto__categoria__nombre',
-        mes=ExtractMonth('venta__created_at')
+        'mes'
     ).annotate(
         total_vendido=Sum('cantidad')
     ).order_by('producto__categoria__nombre', 'mes')
 
-    from collections import defaultdict
-    resumen = defaultdict(lambda: {'total_anual': 0, 'meses': []})
+    # Debug en consola
+    print(f"Tenant: {tenant.schema_name}, Ventas encontradas: {len(ventas_por_mes)}")
+
+    # Agrupar por categoría
+    resumen = defaultdict(lambda: {'total_anual': 0, 'meses': {}})
     for item in ventas_por_mes:
         cat = item['producto__categoria__nombre'] or "Sin categoría"
         mes = item['mes']
         total = item['total_vendido']
-        resumen[cat]['meses'].append((mes, total))
+        resumen[cat]['meses'][mes] = total
         resumen[cat]['total_anual'] += total
 
     resultado = []
     for cat, data in resumen.items():
-        promedio_mensual = data['total_anual'] / 12 if data['total_anual'] else 1
-        for mes, total in data['meses']:
-            porcentaje = (total / promedio_mensual) * 100 if promedio_mensual else 0
-            resultado.append({
-                "categoria_nombre": cat,
-                "mes": mes,
-                "promedio_ventas": float(total),
-                "porcentaje_vs_anual": round(porcentaje, 1)
-            })
+        num_meses_con_datos = len(data['meses'])
+        promedio_mensual = data['total_anual'] / max(num_meses_con_datos, 1)
+        for mes in range(1, 13):
+            total = data['meses'].get(mes, 0)
+            if total > 0:
+                porcentaje = (total / promedio_mensual) * 100 if promedio_mensual else 0
+                resultado.append({
+                    "categoria_nombre": cat,
+                    "mes": mes,
+                    "promedio_ventas": float(total),
+                    "porcentaje_vs_anual": round(porcentaje, 1)
+                })
+
     return Response(resultado)

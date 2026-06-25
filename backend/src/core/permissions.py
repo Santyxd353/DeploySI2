@@ -24,7 +24,7 @@ class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        
+
         role = obtener_rol_usuario(request.user)
         return role == ROLE_ADMIN
 
@@ -37,6 +37,6 @@ class IsAdminOrPharmacist(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        
+
         role = obtener_rol_usuario(request.user)
         return role in [ROLE_ADMIN, ROLE_FARMACEUTICO]

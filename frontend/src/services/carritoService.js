@@ -151,6 +151,26 @@ export const carritoService = {
     return response;
   },
 
+  confirmarQrSimulado: async ({ datosFactura, observacion = 'Pago QR simulado', estado = 'pagada' } = {}) => {
+    const carritoToken = getCarritoToken();
+    const response = await requestJsonWithAuthRetry('/api/carrito/confirmar/', {
+      method: 'POST',
+      headers: {
+        ...getCarritoHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        estado,
+        observacion,
+        datos_factura: datosFactura || {},
+        ...(carritoToken ? { carrito_token: carritoToken } : {}),
+      }),
+    });
+
+    clearCarritoToken();
+    return response;
+  },
+
   // Vaciar carrito (limpiar token local)
   vaciar: () => {
     console.log("🧹 vaciar: limpiando carrito");

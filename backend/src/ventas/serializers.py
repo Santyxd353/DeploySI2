@@ -80,6 +80,9 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
 
 class VentaSerializer(serializers.ModelSerializer):
     detalles = DetalleVentaSerializer(many=True, read_only=True)
+    cliente_detalle = serializers.SerializerMethodField()
+    vendedor_detalle = serializers.SerializerMethodField()
+    factura_detalle = serializers.SerializerMethodField()
 
     class Meta:
         model = Venta
@@ -98,19 +101,62 @@ class VentaSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "detalles",
+            "cliente_detalle",
+            "vendedor_detalle",
+            "factura_detalle",
         ]
         read_only_fields = ["stripe_payment_intent_id"]
+
+    def get_cliente_detalle(self, obj):
+        cliente = getattr(obj, "cliente", None)
+        if cliente is None:
+            return None
+        return {
+            "id": cliente.id,
+            "nombres": cliente.nombres,
+            "apellidos": cliente.apellidos,
+            "email": cliente.email,
+            "telefono": cliente.telefono,
+            "ci_nit": cliente.ci_nit,
+            "tipo": cliente.tipo,
+        }
+
+    def get_vendedor_detalle(self, obj):
+        vendedor = getattr(obj, "vendedor", None)
+        if vendedor is None:
+            return None
+        nombre = " ".join([vendedor.first_name or "", vendedor.last_name or ""]).strip()
+        return {
+            "id": vendedor.id,
+            "nombre": nombre or vendedor.email or vendedor.username,
+            "email": vendedor.email,
+        }
+
+    def get_factura_detalle(self, obj):
+        try:
+            factura = obj.factura
+        except Exception:
+            return None
+        return {
+            "id": factura.id,
+            "numero": factura.numero_factura,
+            "tipo": factura.tipo,
+            "nombre_cliente": factura.nombre_cliente,
+            "email_cliente": factura.email_cliente,
+            "nit_ci": factura.nit_ci,
+            "fecha_emision": factura.fecha_emision,
+        }
 
 
 # HU-18: Serializers para Cliente
 class VentaClienteSerializer(serializers.ModelSerializer):
     """
     Serializer limitado para cliente (HU-18).
-    Solo muestra información relevante de sus propias compras.
+    Solo muestra informacion relevante de sus propias compras.
     """
     detalles = DetalleVentaSerializer(many=True, read_only=True)
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
-    
+
     class Meta:
         model = Venta
         fields = [
@@ -129,7 +175,7 @@ class VentaClienteSerializer(serializers.ModelSerializer):
 class VentaAdminSerializer(serializers.ModelSerializer):
     """
     Serializer completo para admin (HU-36).
-    Incluye información del cliente y vendedor.
+    Incluye informacion del cliente y vendedor.
     """
     cliente_nombre = serializers.CharField(source="cliente.nombres", read_only=True)
     cliente_email = serializers.CharField(source="cliente.email", read_only=True)
@@ -137,7 +183,7 @@ class VentaAdminSerializer(serializers.ModelSerializer):
     detalles = DetalleVentaSerializer(many=True, read_only=True)
     estado_label = serializers.CharField(source="get_estado_display", read_only=True)
     origen_label = serializers.CharField(source="get_origen_display", read_only=True)
-    
+
     class Meta:
         model = Venta
         fields = [
@@ -160,7 +206,7 @@ class VentaAdminSerializer(serializers.ModelSerializer):
             "updated_at",
             "detalles",
         ]
-    
+
     def get_vendedor_nombre(self, obj):
         if obj.vendedor:
             return f"{obj.vendedor.first_name} {obj.vendedor.last_name}".strip() or obj.vendedor.username

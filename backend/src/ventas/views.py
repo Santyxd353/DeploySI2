@@ -1,4 +1,4 @@
-﻿from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 
 import stripe
 from django.conf import settings
@@ -284,7 +284,7 @@ def crear_venta_pos(request):
     return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 
 
-# ========== NUEVAS VISTAS DE STRIPE Y FACTURACIÓN ==========
+# ========== NUEVAS VISTAS DE STRIPE Y FACTURACI�N ==========
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -295,27 +295,27 @@ def crear_intent_pago(request):
     """
     total = request.data.get('total')
     metadata_raw = request.data.get('metadata') if isinstance(request.data, dict) else None
-    
+
     if not total:
         return Response(
             {'detail': 'El campo "total" es requerido.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     try:
         total_decimal = Decimal(str(total))
     except:
         return Response(
-            {'detail': 'Total inválido.'},
+            {'detail': 'Total inv�lido.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     if total_decimal <= 0:
         return Response(
             {'detail': 'El total debe ser mayor a 0.'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     metadata = {}
     if isinstance(metadata_raw, dict):
         for key, value in metadata_raw.items():
@@ -444,7 +444,7 @@ def confirmar_pago_venta(request):
         entidad_id=str(venta.id),
     )
 
-    # Actualizar Pedido con coordenadas y dirección (la señal ya lo creó sin coordenadas)
+    # Actualizar Pedido con coordenadas y direcci�n (la se�al ya lo cre� sin coordenadas)
     if created and (lat_entrega is not None and lon_entrega is not None):
         try:
             from decimal import Decimal as _D
@@ -489,7 +489,7 @@ def obtener_factura(request, numero_factura):
             {'detail': 'Factura no encontrada.'},
             status=status.HTTP_404_NOT_FOUND
         )
-    
+
     # Serializar manualmente (o usar serializer si lo prefieres)
     data = {
         'id': factura.id,
@@ -514,7 +514,7 @@ def obtener_factura(request, numero_factura):
             for d in factura.venta.detalles.all()
         ]
     }
-    
+
     return Response(data, status=status.HTTP_200_OK)
 
 
@@ -631,7 +631,7 @@ def listar_historial_ventas(request):
     """
     GET /api/ventas/historial/
     Query params:
-      - cliente_id  (solo admin/farmacéutico/cajero)
+      - cliente_id  (solo admin/farmac�utico/cajero)
       - page        (default 1)
       - page_size   (default 10, max 50)
       - estado      (pendiente|pagada|preparando|entregada|cancelada)
@@ -639,8 +639,8 @@ def listar_historial_ventas(request):
       - fecha_hasta (YYYY-MM-DD)
 
     RBAC:
-      - ventas.ver → puede filtrar por cualquier cliente_id
-      - ROLE_CLIENTE → solo sus propias ventas (ignora cliente_id)
+      - ventas.ver ? puede filtrar por cualquier cliente_id
+      - ROLE_CLIENTE ? solo sus propias ventas (ignora cliente_id)
     """
     from core.rbac import tiene_permiso
 
@@ -709,7 +709,7 @@ def listar_historial_ventas(request):
         for p in productos_frecuentes_qs
     ]
 
-    # Paginación
+    # Paginaci�n
     try:
         page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(max(1, int(request.query_params.get("page_size", 10))), 50)
@@ -779,9 +779,9 @@ def listar_historial_ventas(request):
 def obtener_estadisticas_cliente(request):
     """
     GET /api/ventas/historial/estadisticas/
-    
-    HU-18: Estadísticas personales del cliente autenticado.
-    
+
+    HU-18: Estad�sticas personales del cliente autenticado.
+
     Devuelve:
     {
         "total_gastado": float,
@@ -794,7 +794,7 @@ def obtener_estadisticas_cliente(request):
     }
     """
     usuario = request.user
-    
+
     try:
         cliente = usuario.cliente
     except:
@@ -802,34 +802,34 @@ def obtener_estadisticas_cliente(request):
             {"detail": "Usuario no tiene cliente asociado"},
             status=status.HTTP_404_NOT_FOUND
         )
-    
+
     # Solo ventas completadas (pagadas o entregadas)
     qs_completadas = Venta.objects.filter(
         tenant=request.tenant,
         cliente=cliente,
         estado__in=['pagada', 'entregada']
     )
-    
+
     # Agregados de ventas completadas
     agg = qs_completadas.aggregate(
         total=Sum('total'),
         cantidad=Count('id')
     )
-    
+
     total_gastado = float(agg['total'] or 0)
     total_compras = agg['cantidad'] or 0
-    
+
     # Ticket promedio
     ticket_promedio = 0
     if total_compras > 0:
         ticket_promedio = round(total_gastado / total_compras, 2)
-    
-    # Última compra
+
+    # �ltima compra
     ultima_compra = qs_completadas.order_by('-created_at').first()
     ultima_compra_data = None
     if ultima_compra:
         ultima_compra_data = VentaClienteSerializer(ultima_compra).data
-    
+
     # Compras este mes
     from django.utils import timezone
     hoy = timezone.now()
@@ -837,7 +837,7 @@ def obtener_estadisticas_cliente(request):
     compras_este_mes = qs_completadas.filter(
         created_at__gte=primer_dia_mes
     ).count()
-    
+
     # Contar por estado
     qs_todas = Venta.objects.filter(
         tenant=request.tenant,
@@ -847,7 +847,7 @@ def obtener_estadisticas_cliente(request):
     estado_pendiente_count = qs_todas.filter(estado='pendiente').count()
     estado_entregada_count = qs_todas.filter(estado='entregada').count()
     estado_cancelada_count = qs_todas.filter(estado='cancelada').count()
-    
+
     stats = {
         "total_gastado": total_gastado,
         "total_compras": total_compras,

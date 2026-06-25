@@ -9,6 +9,7 @@ import {
   productosService,
   subcategoriasService,
 } from "../../services/inventarioService";
+import BarcodeScannerInput from "../ui/BarcodeScannerInput";
 
 export default function RegistroEntradaStockForm({
   onSuccess,
@@ -216,6 +217,24 @@ export default function RegistroEntradaStockForm({
     }
   };
 
+  const handleBarcodeScan = async (codigo) => {
+    const normalized = codigo.trim();
+    const data = await productosService.listar({ search: normalized, estado: true, page_size: 20 });
+    const results = Array.isArray(data) ? data : data.results || [];
+    const producto = results.find((item) => String(item.sku || "").trim().toLowerCase() === normalized.toLowerCase());
+    if (!producto) {
+      throw new Error(`No encontrado: ${normalized}`);
+    }
+
+    setSelectedProductInfo(producto);
+    setProductoSearchInput(producto.sku || normalized);
+    setProductoSearch(producto.sku || normalized);
+    setCategoriaFilter(producto.categoria_id ? String(producto.categoria_id) : "");
+    setSubcategoriaFilter(producto.subcategoria_id ? String(producto.subcategoria_id) : "");
+    setFormData((prev) => ({ ...prev, producto: String(producto.id) }));
+    setErrors((prev) => ({ ...prev, producto: "", general: "" }));
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -336,6 +355,14 @@ export default function RegistroEntradaStockForm({
       )}
 
       <form onSubmit={handleSubmit} className={compact ? "space-y-4" : "mt-6 space-y-4"}>
+        <BarcodeScannerInput
+          label="Escanear producto"
+          placeholder="Escanea SKU del producto y presiona Enter"
+          onScan={handleBarcodeScan}
+          disabled={submitting || isLoading || lockProductSelection}
+          autoFocus={!compact}
+        />
+
         <fieldset disabled={submitting || isLoading} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 transition-all sm:p-4">
           <legend className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Buscar producto</legend>
 
