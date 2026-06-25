@@ -22,7 +22,7 @@ class _CartTabState extends State<CartTab> {
   List<Map<String, dynamic>> _cartItems = [];
   bool _loading = true;
   bool _processing = false;
-  String _paymentMethod = 'qr';
+  String _paymentMethod = 'stripe';
   String _error = '';
   double _subtotal = 0;
   double _total = 0;
@@ -257,6 +257,10 @@ class _CartTabState extends State<CartTab> {
   }
 
   Future<void> _continuarPago() async {
+    if (_paymentMethod == 'stripe') {
+      await _pagarConStripe();
+      return;
+    }
     if (_paymentMethod == 'efectivo') {
       await _pagarEnEfectivo();
       return;
@@ -871,22 +875,32 @@ class _CartTabState extends State<CartTab> {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: _buildPaymentOption(
-                    'qr',
-                    Icons.qr_code_2_rounded,
-                    'QR simulado',
-                  ),
+                _buildPaymentOption(
+                  'stripe',
+                  Icons.credit_card_rounded,
+                  'Tarjeta con Stripe',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildPaymentOption(
-                    'efectivo',
-                    Icons.payments_rounded,
-                    'Efectivo',
-                  ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildPaymentOption(
+                        'qr',
+                        Icons.qr_code_2_rounded,
+                        'QR simulado',
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildPaymentOption(
+                        'efectivo',
+                        Icons.payments_rounded,
+                        'Efectivo',
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -916,9 +930,11 @@ class _CartTabState extends State<CartTab> {
                         ),
                       )
                     : Text(
-                        _paymentMethod == 'qr'
-                            ? 'Pagar con QR simulado'
-                            : 'Confirmar efectivo',
+                        switch (_paymentMethod) {
+                          'stripe' => 'Pagar con Stripe',
+                          'efectivo' => 'Confirmar efectivo',
+                          _ => 'Pagar con QR simulado',
+                        },
                         style: GoogleFonts.manrope(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
