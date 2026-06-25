@@ -58,7 +58,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: http://localhost:${DJANGO_PORT}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
       VITE_ROOT_DOMAIN: ${SAAS_ROOT_DOMAIN:-localhost}
       VITE_STRIPE_PUBLIC_KEY: ${STRIPE_PUBLIC_KEY}
       CHOKIDAR_USEPOLLING: "true"
