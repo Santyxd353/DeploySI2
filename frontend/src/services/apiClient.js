@@ -4,7 +4,7 @@ function normalizeApiBaseUrl(rawValue) {
   return base.replace(/\/api$/i, "");
 }
 
-const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const STATIC_API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const ROOT_DOMAIN = import.meta.env.VITE_ROOT_DOMAIN || "localhost";
 const ACCESS_TOKEN_KEY = "auth_access_token";
 const REFRESH_TOKEN_KEY = "auth_refresh_token";
@@ -29,11 +29,25 @@ function detectTenantSubdomain(hostname = window.location.hostname) {
 
 function buildUrl(endpoint) {
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
-  return `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+  return `${getApiBaseUrl()}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 }
 
 export function getApiBaseUrl() {
-  return API_BASE_URL;
+  if (typeof window === "undefined") return STATIC_API_BASE_URL;
+
+  try {
+    const apiUrl = new URL(STATIC_API_BASE_URL);
+    const currentHost = window.location.hostname.toLowerCase();
+    const rootHost = (ROOT_DOMAIN || "").toLowerCase();
+
+    if (rootHost && currentHost.endsWith(`.${rootHost}`) && apiUrl.hostname === rootHost) {
+      apiUrl.hostname = currentHost;
+    }
+
+    return apiUrl.toString().replace(/\/+$/, "");
+  } catch {
+    return STATIC_API_BASE_URL;
+  }
 }
 
 function getStoredAccessToken() {
