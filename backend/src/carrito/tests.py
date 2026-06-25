@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from inventarios.models import Categoria, Inventario, Laboratorio, Producto
+from carrito.models import Carrito, CarritoItem
 from tenants.context import clear_current_tenant, set_current_tenant
 from tenants.models import Domain, Tenant
 from .voice_search import parse_voice_search_command
@@ -140,3 +141,44 @@ class CarritoApiFlowTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["items"][0]["cantidad"], 5)
+
+    def test_consolida_carritos_activos_del_usuario(self):
+        self.client.force_authenticate(user=self.user)
+        self.client.post("/api/carrito/agregar/", {"producto_id": self.producto.id, "cantidad": 1}, format="json")
+
+        with schema_context(self.tenant.schema_name):
+            otra_categoria = Categoria.objects.create(nombre="Vitaminas")
+            otro_laboratorio = Laboratorio.objects.create(nombre="Otro Lab")
+            otro_producto = Producto.objects.create(
+                sku="SKU-2",
+                nombre_comercial="Ibuprofeno",
+                categoria=otra_categoria,
+                laboratorio=otro_laboratorio,
+                forma_farmaceutica="tableta",
+                presentacion="caja x 20",
+                unidad_medida="caja",
+                precio_compra=Decimal("8.00"),
+                precio_venta=Decimal("30.00"),
+                stock_minimo=1,
+                estado=True,
+                requiere_receta=False,
+            )
+            inv = Inventario.objects.get(producto=otro_producto)
+            inv.stock_actual = 20
+            inv.save(update_fields=["stock_actual", "updated_at"])
+
+            second_cart = Carrito.objects.create(usuario=self.user, estado="activo", origen="online")
+            CarritoItem.objects.create(
+                carrito=second_cart,
+                producto=otro_producto,
+                cantidad=2,
+                precio_unitario=otro_producto.precio_venta,
+                subtotal=otro_producto.precio_venta * 2,
+            )
+
+        response = self.client.get("/api/carrito/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["cantidad_items"], 2)
+        nombres = [item["producto_nombre"] for item in response.data["items"]]
+        self.assertIn("Paracetamol", nombres)
+        self.assertIn("Ibuprofeno", nombres)

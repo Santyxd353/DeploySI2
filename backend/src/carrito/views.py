@@ -1,4 +1,4 @@
-﻿from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404
 from clientes.models import Cliente
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -130,7 +130,7 @@ def carrito_agregar(request):
 @permission_classes([AllowAny])
 def carrito_item_detalle(request, item_id):
     usuario = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
-    carrito = Carrito.objects.filter(usuario=usuario, estado="activo").order_by("-updated_at").first()
+    carrito = obtener_o_crear_carrito_activo(usuario=usuario)
     if not carrito:
         return Response({"detail": "No existe carrito activo."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -160,12 +160,8 @@ def carrito_item_detalle(request, item_id):
 @permission_classes([AllowAny])
 def carrito_listar(request):
     usuario = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
-    carrito = Carrito.objects.filter(usuario=usuario, estado="activo").order_by("-updated_at").first()
-    
-    if not carrito:
-        carrito = obtener_o_crear_carrito_activo(usuario=usuario)
-        # Asegurar token para invitados recién creados
-        carrito = _asegurar_token_carrito(carrito, usuario)
+    carrito = obtener_o_crear_carrito_activo(usuario=usuario)
+    carrito = _asegurar_token_carrito(carrito, usuario)
 
     # Solo validar token si el usuario está autenticado
     # Para invitados, no validamos en GET porque el token aún no está en el header

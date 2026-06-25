@@ -58,7 +58,9 @@ class _CartTabState extends State<CartTab> {
 
   void _applyCartData(Map<String, dynamic> data) {
     final rawItems = data['items'];
-    final items = rawItems is List ? rawItems.whereType<Map<String, dynamic>>().toList() : <Map<String, dynamic>>[];
+    final items = rawItems is List
+        ? rawItems.whereType<Map<String, dynamic>>().toList()
+        : <Map<String, dynamic>>[];
 
     setState(() {
       _cartItems = items;
@@ -69,7 +71,10 @@ class _CartTabState extends State<CartTab> {
     });
   }
 
-  Future<void> _actualizarCantidad(Map<String, dynamic> item, int nuevaCantidad) async {
+  Future<void> _actualizarCantidad(
+    Map<String, dynamic> item,
+    int nuevaCantidad,
+  ) async {
     if (nuevaCantidad <= 0) return;
 
     final itemId = item['id'];
@@ -98,7 +103,10 @@ class _CartTabState extends State<CartTab> {
     setState(() => _processing = true);
     try {
       final token = await _getAccessToken();
-      final data = await _cartService.eliminarItem(itemId: itemId, accessToken: token);
+      final data = await _cartService.eliminarItem(
+        itemId: itemId,
+        accessToken: token,
+      );
       _applyCartData(data);
     } catch (e) {
       _showError('No se pudo eliminar: $e');
@@ -110,7 +118,9 @@ class _CartTabState extends State<CartTab> {
   // ignore: unused_element
   Future<void> _pagarConStripe() async {
     if (AppConfig.stripePublishableKey.trim().isEmpty) {
-      _showError('Stripe no esta configurado. Define STRIPE_PUBLISHABLE_KEY para mobile.');
+      _showError(
+        'Stripe no esta configurado. Define STRIPE_PUBLISHABLE_KEY para mobile.',
+      );
       return;
     }
 
@@ -136,7 +146,8 @@ class _CartTabState extends State<CartTab> {
         total: _total,
         accessToken: accessToken,
         metadata: {
-          if (carritoToken != null && carritoToken.isNotEmpty) 'carrito_token': carritoToken,
+          if (carritoToken != null && carritoToken.isNotEmpty)
+            'carrito_token': carritoToken,
           'nombre_cliente': datosFactura['nombre_cliente']?.toString() ?? '',
           'email_cliente': datosFactura['email_cliente']?.toString() ?? '',
           'telefono': datosFactura['telefono']?.toString() ?? '',
@@ -147,7 +158,9 @@ class _CartTabState extends State<CartTab> {
       final clientSecret = intentData['client_secret']?.toString() ?? '';
       final paymentIntentId = intentData['payment_intent_id']?.toString() ?? '';
       if (clientSecret.isEmpty || paymentIntentId.isEmpty) {
-        throw const PaymentServiceException('Respuesta incompleta al crear el intent de pago.');
+        throw const PaymentServiceException(
+          'Respuesta incompleta al crear el intent de pago.',
+        );
       }
 
       await _paymentService.abrirPaymentSheet(clientSecret: clientSecret);
@@ -167,7 +180,9 @@ class _CartTabState extends State<CartTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Pago confirmado. Factura ${data['factura']?['numero'] ?? ''} ✅'),
+          content: Text(
+            'Pago confirmado. Factura ${data['factura']?['numero'] ?? ''} ✅',
+          ),
           backgroundColor: const Color(0xFF006A5E),
           behavior: SnackBarBehavior.floating,
         ),
@@ -187,11 +202,13 @@ class _CartTabState extends State<CartTab> {
     final datosFactura = await _solicitarDatosFactura();
     if (datosFactura == null) return;
 
-    final operationCode = 'MOBQR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final operationCode =
+        'MOBQR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
     final confirmed = await _showQrPaymentDialog(
       operationCode: operationCode,
       total: _total,
-      payload: 'MOBILE_QR_SIMULADO|$operationCode|$_total|${datosFactura['nit_ci'] ?? ''}',
+      payload:
+          'MOBILE_QR_SIMULADO|$operationCode|$_total|${datosFactura['nit_ci'] ?? ''}',
     );
     if (confirmed != true) return;
 
@@ -257,7 +274,9 @@ class _CartTabState extends State<CartTab> {
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
           title: Text(
             'Pago QR simulado',
             style: GoogleFonts.manrope(fontWeight: FontWeight.w800),
@@ -300,7 +319,10 @@ class _CartTabState extends State<CartTab> {
                 Text(
                   'QR de demostracion. La compra solo se confirma al tocar Realizar pago.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.manrope(fontSize: 12, color: const Color(0xFF6F7977)),
+                  style: GoogleFonts.manrope(
+                    fontSize: 12,
+                    color: const Color(0xFF6F7977),
+                  ),
                 ),
               ],
             ),
@@ -319,8 +341,13 @@ class _CartTabState extends State<CartTab> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF006A5E)),
-                    child: const Text('Realizar pago', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF006A5E),
+                    ),
+                    child: const Text(
+                      'Realizar pago',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ),
               ],
@@ -332,20 +359,34 @@ class _CartTabState extends State<CartTab> {
   }
 
   Future<void> _showSaleNote(Map<String, dynamic> data) {
-    final venta = data['venta'] is Map<String, dynamic> ? data['venta'] as Map<String, dynamic> : <String, dynamic>{};
-    final factura = data['factura'] is Map<String, dynamic> ? data['factura'] as Map<String, dynamic> : <String, dynamic>{};
-    final facturaDetalle = venta['factura_detalle'] is Map<String, dynamic> ? venta['factura_detalle'] as Map<String, dynamic> : <String, dynamic>{};
-    final cliente = venta['cliente_detalle'] is Map<String, dynamic> ? venta['cliente_detalle'] as Map<String, dynamic> : <String, dynamic>{};
-    final detalles = venta['detalles'] is List ? (venta['detalles'] as List).whereType<Map<String, dynamic>>().toList() : <Map<String, dynamic>>[];
-    final clienteNombre = (factura['nombre_cliente']?.toString().trim().isNotEmpty ?? false)
+    final venta = data['venta'] is Map<String, dynamic>
+        ? data['venta'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final factura = data['factura'] is Map<String, dynamic>
+        ? data['factura'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final facturaDetalle = venta['factura_detalle'] is Map<String, dynamic>
+        ? venta['factura_detalle'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final cliente = venta['cliente_detalle'] is Map<String, dynamic>
+        ? venta['cliente_detalle'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final detalles = venta['detalles'] is List
+        ? (venta['detalles'] as List).whereType<Map<String, dynamic>>().toList()
+        : <Map<String, dynamic>>[];
+    final clienteNombre =
+        (factura['nombre_cliente']?.toString().trim().isNotEmpty ?? false)
         ? factura['nombre_cliente'].toString()
-        : '${cliente['nombres'] ?? 'Cliente'} ${cliente['apellidos'] ?? ''}'.trim();
+        : '${cliente['nombres'] ?? 'Cliente'} ${cliente['apellidos'] ?? ''}'
+              .trim();
 
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
         return SafeArea(
           top: false,
@@ -359,15 +400,46 @@ class _CartTabState extends State<CartTab> {
                 controller: controller,
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Text('Nota de venta', style: GoogleFonts.manrope(fontSize: 22, fontWeight: FontWeight.w900)),
+                  Text(
+                    'Nota de venta',
+                    style: GoogleFonts.manrope(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('Venta #${venta['id'] ?? '-'}', style: GoogleFonts.manrope(color: const Color(0xFF6F7977), fontWeight: FontWeight.w700)),
+                  Text(
+                    'Venta #${venta['id'] ?? '-'}',
+                    style: GoogleFonts.manrope(
+                      color: const Color(0xFF6F7977),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(height: 14),
-                  _noteInfoTile('Comprobante', factura['numero']?.toString() ?? facturaDetalle['numero']?.toString() ?? 'Pendiente'),
-                  _noteInfoTile('Cliente', clienteNombre.isEmpty ? 'Cliente mostrador' : clienteNombre),
-                  _noteInfoTile('CI/NIT', facturaDetalle['nit_ci']?.toString() ?? cliente['ci_nit']?.toString() ?? 'No registrado'),
+                  _noteInfoTile(
+                    'Comprobante',
+                    factura['numero']?.toString() ??
+                        facturaDetalle['numero']?.toString() ??
+                        'Pendiente',
+                  ),
+                  _noteInfoTile(
+                    'Cliente',
+                    clienteNombre.isEmpty ? 'Cliente mostrador' : clienteNombre,
+                  ),
+                  _noteInfoTile(
+                    'CI/NIT',
+                    facturaDetalle['nit_ci']?.toString() ??
+                        cliente['ci_nit']?.toString() ??
+                        'No registrado',
+                  ),
                   const SizedBox(height: 14),
-                  Text('Detalle comprado', style: GoogleFonts.manrope(fontWeight: FontWeight.w900, fontSize: 16)),
+                  Text(
+                    'Detalle comprado',
+                    style: GoogleFonts.manrope(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   ...detalles.map((item) {
                     return Container(
@@ -385,13 +457,37 @@ class _CartTabState extends State<CartTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(item['producto_nombre']?.toString() ?? 'Producto', style: GoogleFonts.manrope(fontWeight: FontWeight.w800)),
-                                Text('SKU: ${item['producto_sku'] ?? '-'}', style: GoogleFonts.manrope(fontSize: 12, color: const Color(0xFF6F7977))),
-                                Text('${item['cantidad']} x Bs ${item['precio_unitario']}', style: GoogleFonts.manrope(fontSize: 12, color: const Color(0xFF6F7977))),
+                                Text(
+                                  item['producto_nombre']?.toString() ??
+                                      'Producto',
+                                  style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                Text(
+                                  'SKU: ${item['producto_sku'] ?? '-'}',
+                                  style: GoogleFonts.manrope(
+                                    fontSize: 12,
+                                    color: const Color(0xFF6F7977),
+                                  ),
+                                ),
+                                Text(
+                                  '${item['cantidad']} x Bs ${item['precio_unitario']}',
+                                  style: GoogleFonts.manrope(
+                                    fontSize: 12,
+                                    color: const Color(0xFF6F7977),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Text('Bs ${item['subtotal']}', style: GoogleFonts.manrope(fontWeight: FontWeight.w900, color: const Color(0xFF006A5E))),
+                          Text(
+                            'Bs ${item['subtotal']}',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w900,
+                              color: const Color(0xFF006A5E),
+                            ),
+                          ),
                         ],
                       ),
                     );
@@ -400,8 +496,21 @@ class _CartTabState extends State<CartTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total', style: GoogleFonts.manrope(fontSize: 18, fontWeight: FontWeight.w900)),
-                      Text('Bs ${venta['total'] ?? _total.toStringAsFixed(2)}', style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w900, color: const Color(0xFF006A5E))),
+                      Text(
+                        'Total',
+                        style: GoogleFonts.manrope(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'Bs ${venta['total'] ?? _total.toStringAsFixed(2)}',
+                        style: GoogleFonts.manrope(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF006A5E),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 18),
@@ -409,8 +518,19 @@ class _CartTabState extends State<CartTab> {
                     height: 52,
                     child: ElevatedButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF006A5E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                      child: Text('Cerrar nota', style: GoogleFonts.manrope(color: Colors.white, fontWeight: FontWeight.w800)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF006A5E),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        'Cerrar nota',
+                        style: GoogleFonts.manrope(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -426,13 +546,26 @@ class _CartTabState extends State<CartTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFFF8FAF9), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAF9),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Row(
         children: [
-          Text(label, style: GoogleFonts.manrope(fontWeight: FontWeight.w800, color: const Color(0xFF6F7977))),
+          Text(
+            label,
+            style: GoogleFonts.manrope(
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF6F7977),
+            ),
+          ),
           const Spacer(),
           Flexible(
-            child: Text(value, textAlign: TextAlign.right, style: GoogleFonts.manrope(fontWeight: FontWeight.w800)),
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.manrope(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -467,7 +600,9 @@ class _CartTabState extends State<CartTab> {
     if (_loading) {
       return const Scaffold(
         backgroundColor: Color(0xFFF8FAF9),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF006A5E))),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF006A5E)),
+        ),
       );
     }
 
@@ -480,13 +615,30 @@ class _CartTabState extends State<CartTab> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.shopping_cart_checkout_rounded, color: Color(0xFFBA1A1A), size: 56),
+                const Icon(
+                  Icons.shopping_cart_checkout_rounded,
+                  color: Color(0xFFBA1A1A),
+                  size: 56,
+                ),
                 const SizedBox(height: 12),
-                Text('No se pudo cargar el carrito', style: GoogleFonts.manrope(fontSize: 18, fontWeight: FontWeight.w800)),
+                Text(
+                  'No se pudo cargar el carrito',
+                  style: GoogleFonts.manrope(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 const SizedBox(height: 8),
-                Text(_error, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6F7977))),
+                Text(
+                  _error,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF6F7977)),
+                ),
                 const SizedBox(height: 16),
-                ElevatedButton(onPressed: _loadCartItems, child: const Text('Reintentar')),
+                ElevatedButton(
+                  onPressed: _loadCartItems,
+                  child: const Text('Reintentar'),
+                ),
               ],
             ),
           ),
@@ -505,20 +657,38 @@ class _CartTabState extends State<CartTab> {
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
               child: Row(
                 children: [
-                  Text('Mi Carrito', style: GoogleFonts.manrope(fontSize: 24, fontWeight: FontWeight.w800, color: const Color(0xFF191C1C))),
+                  Text(
+                    'Mi Carrito',
+                    style: GoogleFonts.manrope(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF191C1C),
+                    ),
+                  ),
                   const Spacer(),
-                  Text('${_cartItems.length} ítems', style: GoogleFonts.manrope(color: const Color(0xFF6F7977), fontWeight: FontWeight.w600)),
+                  Text(
+                    '${_cartItems.length} ítems',
+                    style: GoogleFonts.manrope(
+                      color: const Color(0xFF6F7977),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
-            if (_processing) const LinearProgressIndicator(color: Color(0xFF006A5E), minHeight: 2),
+            if (_processing)
+              const LinearProgressIndicator(
+                color: Color(0xFF006A5E),
+                minHeight: 2,
+              ),
             Expanded(
               child: _cartItems.isEmpty
                   ? _buildEmptyCart()
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       itemCount: _cartItems.length,
-                      itemBuilder: (context, index) => _buildCartItem(_cartItems[index]),
+                      itemBuilder: (context, index) =>
+                          _buildCartItem(_cartItems[index]),
                     ),
             ),
             _buildOrderSummary(),
@@ -530,7 +700,8 @@ class _CartTabState extends State<CartTab> {
 
   Widget _buildCartItem(Map<String, dynamic> item) {
     final cantidad = int.tryParse(item['cantidad']?.toString() ?? '1') ?? 1;
-    final precio = double.tryParse(item['precio_unitario']?.toString() ?? '0') ?? 0;
+    final precio =
+        double.tryParse(item['precio_unitario']?.toString() ?? '0') ?? 0;
     final nombre = item['producto_nombre']?.toString() ?? 'Medicamento';
     final sku = item['producto_sku']?.toString() ?? '';
 
@@ -547,25 +718,57 @@ class _CartTabState extends State<CartTab> {
           Container(
             width: 70,
             height: 70,
-            decoration: BoxDecoration(color: const Color(0xFFF0F2F1), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.medication_liquid_rounded, color: Color(0xFF006A5E), size: 34),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F2F1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.medication_liquid_rounded,
+              color: Color(0xFF006A5E),
+              size: 34,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(nombre, style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (sku.isNotEmpty) Text('SKU: $sku', style: GoogleFonts.manrope(fontSize: 12, color: const Color(0xFF6F7977))),
+                Text(
+                  nombre,
+                  style: GoogleFonts.manrope(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (sku.isNotEmpty)
+                  Text(
+                    'SKU: $sku',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      color: const Color(0xFF6F7977),
+                    ),
+                  ),
                 const SizedBox(height: 8),
-                Text('Bs ${precio.toStringAsFixed(2)}', style: GoogleFonts.manrope(fontWeight: FontWeight.w800, color: const Color(0xFF006A5E), fontSize: 16)),
+                Text(
+                  'Bs ${precio.toStringAsFixed(2)}',
+                  style: GoogleFonts.manrope(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF006A5E),
+                    fontSize: 16,
+                  ),
+                ),
               ],
             ),
           ),
           Column(
             children: [
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: Color(0xFFBA1A1A)),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: Color(0xFFBA1A1A),
+                ),
                 onPressed: _processing ? null : () => _eliminarProducto(item),
               ),
               Row(
@@ -574,13 +777,20 @@ class _CartTabState extends State<CartTab> {
                   IconButton(
                     icon: const Icon(Icons.remove_circle_outline, size: 22),
                     color: const Color(0xFF006A5E),
-                    onPressed: _processing || cantidad <= 1 ? null : () => _actualizarCantidad(item, cantidad - 1),
+                    onPressed: _processing || cantidad <= 1
+                        ? null
+                        : () => _actualizarCantidad(item, cantidad - 1),
                   ),
-                  Text('x$cantidad', style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+                  Text(
+                    'x$cantidad',
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline, size: 22),
                     color: const Color(0xFF006A5E),
-                    onPressed: _processing ? null : () => _actualizarCantidad(item, cantidad + 1),
+                    onPressed: _processing
+                        ? null
+                        : () => _actualizarCantidad(item, cantidad + 1),
                   ),
                 ],
               ),
@@ -597,7 +807,13 @@ class _CartTabState extends State<CartTab> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, -5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
       ),
       child: SafeArea(
         child: Column(
@@ -605,16 +821,41 @@ class _CartTabState extends State<CartTab> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Subtotal', style: GoogleFonts.manrope(fontSize: 15, color: const Color(0xFF6F7977))),
-                Text('Bs ${_subtotal.toStringAsFixed(2)}', style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700)),
+                Text(
+                  'Subtotal',
+                  style: GoogleFonts.manrope(
+                    fontSize: 15,
+                    color: const Color(0xFF6F7977),
+                  ),
+                ),
+                Text(
+                  'Bs ${_subtotal.toStringAsFixed(2)}',
+                  style: GoogleFonts.manrope(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Total estimado', style: GoogleFonts.manrope(fontSize: 16, color: const Color(0xFF6F7977))),
-                Text('Bs ${_total.toStringAsFixed(2)}', style: GoogleFonts.manrope(fontSize: 22, fontWeight: FontWeight.w800, color: const Color(0xFF006A5E))),
+                Text(
+                  'Total estimado',
+                  style: GoogleFonts.manrope(
+                    fontSize: 16,
+                    color: const Color(0xFF6F7977),
+                  ),
+                ),
+                Text(
+                  'Bs ${_total.toStringAsFixed(2)}',
+                  style: GoogleFonts.manrope(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF006A5E),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 18),
@@ -632,9 +873,21 @@ class _CartTabState extends State<CartTab> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: _buildPaymentOption('qr', Icons.qr_code_2_rounded, 'QR simulado')),
+                Expanded(
+                  child: _buildPaymentOption(
+                    'qr',
+                    Icons.qr_code_2_rounded,
+                    'QR simulado',
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Expanded(child: _buildPaymentOption('efectivo', Icons.payments_rounded, 'Efectivo')),
+                Expanded(
+                  child: _buildPaymentOption(
+                    'efectivo',
+                    Icons.payments_rounded,
+                    'Efectivo',
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -642,18 +895,35 @@ class _CartTabState extends State<CartTab> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
-                onPressed: _cartItems.isEmpty || _processing ? null : _continuarPago,
+                onPressed: _cartItems.isEmpty || _processing
+                    ? null
+                    : _continuarPago,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF006A5E),
                   disabledBackgroundColor: const Color(0xFFE0E3E1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                   elevation: 0,
                 ),
                 child: _processing
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : Text(
-                        _paymentMethod == 'qr' ? 'Pagar con QR simulado' : 'Confirmar efectivo',
-                        style: GoogleFonts.manrope(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                        _paymentMethod == 'qr'
+                            ? 'Pagar con QR simulado'
+                            : 'Confirmar efectivo',
+                        style: GoogleFonts.manrope(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
               ),
             ),
@@ -674,12 +944,21 @@ class _CartTabState extends State<CartTab> {
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFE7F7F2) : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected ? const Color(0xFF006A5E) : const Color(0xFFE0E3E1), width: selected ? 1.5 : 1),
+          border: Border.all(
+            color: selected ? const Color(0xFF006A5E) : const Color(0xFFE0E3E1),
+            width: selected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 19, color: selected ? const Color(0xFF006A5E) : const Color(0xFF6F7977)),
+            Icon(
+              icon,
+              size: 19,
+              color: selected
+                  ? const Color(0xFF006A5E)
+                  : const Color(0xFF6F7977),
+            ),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
@@ -688,7 +967,9 @@ class _CartTabState extends State<CartTab> {
                 style: GoogleFonts.manrope(
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
-                  color: selected ? const Color(0xFF006A5E) : const Color(0xFF394946),
+                  color: selected
+                      ? const Color(0xFF006A5E)
+                      : const Color(0xFF394946),
                 ),
               ),
             ),
@@ -705,7 +986,12 @@ class _CartTabState extends State<CartTab> {
         const SizedBox(height: 160),
         Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey[300]),
         const SizedBox(height: 16),
-        Center(child: Text('Tu carrito está vacío', style: GoogleFonts.manrope(fontSize: 18, color: Colors.grey))),
+        Center(
+          child: Text(
+            'Tu carrito está vacío',
+            style: GoogleFonts.manrope(fontSize: 18, color: Colors.grey),
+          ),
+        ),
       ],
     );
   }
@@ -715,7 +1001,8 @@ class _DatosFacturaBottomSheet extends StatefulWidget {
   const _DatosFacturaBottomSheet();
 
   @override
-  State<_DatosFacturaBottomSheet> createState() => _DatosFacturaBottomSheetState();
+  State<_DatosFacturaBottomSheet> createState() =>
+      _DatosFacturaBottomSheetState();
 }
 
 class _DatosFacturaBottomSheetState extends State<_DatosFacturaBottomSheet> {
@@ -756,12 +1043,17 @@ class _DatosFacturaBottomSheetState extends State<_DatosFacturaBottomSheet> {
               children: [
                 Text(
                   'Datos de facturacion',
-                  style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 20),
+                  style: GoogleFonts.manrope(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _nombreController,
-                  decoration: const InputDecoration(labelText: 'Nombre completo *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre completo *',
+                  ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Nombre requerido';
@@ -790,7 +1082,9 @@ class _DatosFacturaBottomSheetState extends State<_DatosFacturaBottomSheet> {
                 const SizedBox(height: 10),
                 TextFormField(
                   controller: _nitCiController,
-                  decoration: const InputDecoration(labelText: 'NIT/CI (opcional)'),
+                  decoration: const InputDecoration(
+                    labelText: 'NIT/CI (opcional)',
+                  ),
                 ),
                 const SizedBox(height: 18),
                 SizedBox(
@@ -808,11 +1102,16 @@ class _DatosFacturaBottomSheetState extends State<_DatosFacturaBottomSheet> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF006A5E),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: Text(
                       'Continuar al pago',
-                      style: GoogleFonts.manrope(color: Colors.white, fontWeight: FontWeight.w700),
+                      style: GoogleFonts.manrope(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -863,7 +1162,10 @@ class _SimulatedQrPainter extends CustomPainter {
             final dx = (col + x) * (cell + gap);
             final dy = (row + y) * (cell + gap);
             canvas.drawRRect(
-              RRect.fromRectAndRadius(Rect.fromLTWH(dx, dy, cell, cell), const Radius.circular(1.5)),
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(dx, dy, cell, cell),
+                const Radius.circular(1.5),
+              ),
               dark,
             );
           }
@@ -877,12 +1179,18 @@ class _SimulatedQrPainter extends CustomPainter {
 
     for (var row = 0; row < cells; row += 1) {
       for (var col = 0; col < cells; col += 1) {
-        final inFinder = (row < 7 && col < 7) || (row < 7 && col >= cells - 7) || (row >= cells - 7 && col < 7);
+        final inFinder =
+            (row < 7 && col < 7) ||
+            (row < 7 && col >= cells - 7) ||
+            (row >= cells - 7 && col < 7);
         if (inFinder || !nextBit()) continue;
         final dx = col * (cell + gap);
         final dy = row * (cell + gap);
         canvas.drawRRect(
-          RRect.fromRectAndRadius(Rect.fromLTWH(dx, dy, cell, cell), const Radius.circular(1.5)),
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(dx, dy, cell, cell),
+            const Radius.circular(1.5),
+          ),
           dark,
         );
       }
@@ -890,5 +1198,6 @@ class _SimulatedQrPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SimulatedQrPainter oldDelegate) => oldDelegate.payload != payload;
+  bool shouldRepaint(covariant _SimulatedQrPainter oldDelegate) =>
+      oldDelegate.payload != payload;
 }
